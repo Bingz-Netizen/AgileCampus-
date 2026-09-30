@@ -1,5 +1,7 @@
 # 飞书登录 实施计划（Plan A）
 
+> **状态：已完成**（2026-09-30 逐条核对代码与测试）。证据：Credentials provider `"feishu"`（`src/lib/auth.ts`）、OAuth 路 `api/auth/feishu/{login,callback}` + 登录页按钮、JSSDK 免登路 `api/feishu/jssdk-config` + 登录页静默分支——**两路俱在**。缺口：`jssdk-config` 路由自身无测试（仅单测 lib 函数与签名串）。真机未验：飞书客户端内免登。详见 [进度总览](../../PROGRESS.md)。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 让 AgileCampus 支持以飞书身份登录——OAuth 按钮（内外通用）+ JSSDK 免登（飞书客户端内静默），已绑账号登录之、未绑自动建号。

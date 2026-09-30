@@ -1,5 +1,7 @@
 # 飞书展示卡片 实施计划（Plan B）
 
+> **状态：已完成**（2026-09-30 逐条核对代码与测试）。证据：`src/lib/feishu-card.ts` 三模板 + 深链拼装、`notify.ts` 补项目名/负责人名、`task-card.tsx` 读 `?task=` 自动开弹窗（深链闭合属实）。缺口：深链为纯前端交互，无自动化测试。详见 [进度总览](../../PROGRESS.md)。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 将三类飞书通知（指派/完成/日报）从纯文本升级为展示型 interactive 卡片，卡片「查看详情」深链到项目页并自动打开对应任务弹窗。

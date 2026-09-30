@@ -1,5 +1,7 @@
 # AgileCampus 作战图三下：四写兵器 + 两段式确认 Implementation Plan
 
+> **状态：已完成**（2026-09-30 逐条核对代码与测试）。证据：四写兵器全数装配于 `src/lib/agent/tools.ts`（`__draft` 信封不落库，`tests/agent-drafts.test.ts` 以「drafts 有而 tasks 表 0 行」证之）、`src/lib/agent/commit.ts` 五路 dispatch 且三分支确已裹事务、乐观锁版本校验确在落库路径上。缺口：`/api/chat/commit` 零自动化测试；**版本比对在事务外**——`commit.ts` 先读快照、后开事务，读写窗口内的他人写入检测不到（BACKLOG 只备了毫秒竞态与同批重复 taskId，未覆盖此窗口）。详见 [进度总览](../../PROGRESS.md)。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 在图三上对话地基之上补 MVP 灵魂之下半——四写兵器（create_project / decompose_tasks / update_tasks / plan_sprint）与写操作两段式人工确认：Agent 只产草案不落库，人工确认后经 `/api/chat/commit` 走图二既有 lib 重校验落库，全链路以 replay + 直测离线验证。

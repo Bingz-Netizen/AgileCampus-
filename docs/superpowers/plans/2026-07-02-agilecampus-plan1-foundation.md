@@ -1,5 +1,7 @@
 # AgileCampus 作战图一：地基（脚手架 + 账号 + 团队 + 权限）Implementation Plan
 
+> **状态：已完成**（2026-09-30 逐条核对代码与测试）。证据：`src/lib/{auth,user,team,password}.ts`、`tests/{password,user,team}.test.ts`。缺口：注册→登录→退出的页面级流程与「非成员 404」无自动化测试（作战图本身即定为此类手工验收）。详见 [进度总览](../../PROGRESS.md)。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 搭建 AgileCampus 的项目脚手架与"地基"层——邮箱密码注册登录、团队与邀请码、admin/teacher/student 三角色权限，全部经测试验证并可 Docker 本地运行。

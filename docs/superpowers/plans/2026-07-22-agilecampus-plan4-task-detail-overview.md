@@ -1,5 +1,7 @@
 # AgileCampus 作战图四：任务详情增强 + 跨项目总览 Implementation Plan
 
+> **状态：已完成**（2026-09-30 逐条核对代码与测试）。证据：`tasks.completionNote` 与 `task_dependencies` 表、`setTaskSuccessors`（裹事务、仅防直接反边）、`listMyProjects` 跨团队聚合、`/projects` 总览页、`tests/{task-detail,my-projects}.test.ts`。缺口：Task 7 Step 4 的 Playwright 端到端演示无留痕（仓库无 playwright 依赖）；actions/board/task-card 仅经 lib 层间接覆盖。详见 [进度总览](../../PROGRESS.md)。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** 为任务补充「描述内容 / 完成情况 / 后置任务关联」三项细化（A），并新增一个跨团队「所有项目」总览入口（B）。

@@ -1,5 +1,7 @@
 # AgileCampus 作战图三上：对话地基 + 读工具 Implementation Plan
 
+> **状态：已完成**（2026-09-30 逐条核对代码与测试）。证据：`src/lib/agent/{orchestrator,snapshot,conversation,tools,model}.ts`、`chat-panel.tsx`、replay 测试四件。缺口：`/api/chat` 路由层零自动化测试（403 非成员分支仅有代码路径）；Task 8 约定写入 README 的 `/api/chat` 路由行未落。口径澄清：快照上限实为 4000 字符（非计划所写 2000），读工具实为 4 件（另加 `list_projects`/`list_milestones`），均系后续图扩建。详见 [进度总览](../../PROGRESS.md)。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 在图二骨架之上建对话式 Agent 之地基——conversations/messages 两表、可注入 LLM 的编排层、两件读兵器（query_progress / list_tasks）、请求-响应式对话面板，全链路以 MockLanguageModelV2 录制回放（replay）离线验证，零 API 成本。

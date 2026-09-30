@@ -1,5 +1,7 @@
 # 飞书接入（绑定 + 私信提醒）实施计划
 
+> **状态：已完成**（2026-09-30 逐条核对代码与测试）。证据：`src/lib/{feishu,notify}.ts`、`api/auth/feishu/{login,callback}`、`api/cron/reminders`、`commitDraft` 三分支裹事务且通知于提交后补发。真机未验：飞书 OAuth 绑定与登录、JSSDK 免登、真实卡片投递、外部调度实打 cron——均须真实凭证与重定向白名单，离线不可代。详见 [进度总览](../../PROGRESS.md)。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 让 AgileCampus 经飞书 OAuth 绑定成员身份，并在任务被指派/完成时即时私信、临期/逾期时定时私信提醒；同期将 `commitDraft` 批量落库事务化。

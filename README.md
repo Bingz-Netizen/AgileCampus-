@@ -176,6 +176,7 @@ curl -X POST "$AGILECAMPUS_URL/api/agent/resource-usage" \
 
 ## 文档
 
+- 进度总览（十期状态 / 缺口 / 真机验收项）：`docs/PROGRESS.md`
 - 设计与作战图：`docs/superpowers/`
 - Agent 写入 API：`docs/agent-api.md`
 - 技术债备案：`docs/BACKLOG.md`

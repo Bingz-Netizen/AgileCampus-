@@ -22,7 +22,7 @@
 
 ## 图二（骨架）简化备案
 - 无项目级成员表：团队成员即可见全部团队项目（"参与的项目"从宽）
-- 看板列内手动排序未做（sort_order 已建，拖拽仅改状态）
+- 看板列内手动排序未做（sort_order 已建，拖拽仅改状态）；原作战图所写「落列尾」亦未实现——sortOrder 不在 updateTask 白名单，拖后卡片仍按创建时顺序排
 - teacher 反馈/评论功能后置（设计文档原定 MVP 后）
 - 里程碑无编辑/关闭入口（仅创建与展示，状态字段已建）
 - 项目无编辑/归档入口（status 字段已建）
@@ -33,7 +33,7 @@
 - 每项目一活跃会话（getOrCreateConversation 取最近一条），未做多会话/会话列表
 - tool role 消息未独立成行：工具轨迹并入 assistant 消息的 toolCalls jsonb
 - DeepSeek 真实调用未演武（离线打通策），密钥齐备后须补真实一轮问答验收
-- 快照上限固定 2000 字符、超限整体降级为统计头，未做分段精细裁剪
+- 快照上限固定 4000 字符（图三上原定 2000，后续图扩建并补了三层降级）、超限整体降级为统计头，未做分段精细裁剪
 - 工具执行走底层 lib 各自的权限校验，与编排入口 getProjectForUser 构成轻微重复查询（复用现成 lib，未优化）
 
 ## 依赖版本教训（图三上 Task 6 沉淀）
@@ -45,6 +45,7 @@
 - plan_sprint 免版本校验（草案仅 taskIds 无逐任务 updatedAt）——批量归里程碑+设截止日，低冲突，MVP 可接受
 - update_tasks 乐观锁比对 updatedAt.toISOString()；同一毫秒两写理论上仍可能漏检，概率极低
 - update_tasks 同批次若含同一任务两条变更，versionOf 为循环前快照，第二条仍可能通过（边缘场景，MVP 不处理）
+- **版本比对在事务外**（2026-09-30 审计新发现）：commit.ts 先读快照取 updatedAt、后开事务写库，两者之间他人的写入检测不到——非事务内 CAS。并发下「乐观锁」的承诺要打折，上述两条仅覆盖了毫秒竞态与同批重复 taskId
 - 草案不入库持久化：仅随 assistant 消息 toolCalls 留痕 + 前端态；页面刷新后未落库的草案卡片消失（需重新对话）
 - 确认卡片可编辑聚焦核心字段：update_tasks 卡仅展示 patch（不可逐字段改）
 - DeepSeek 真实「拆任务→确认→落库」演武待密钥
@@ -115,3 +116,22 @@
   `export DEEPSEEK_API_KEY=sk-xxx && npx dotenv -e .env.test -- npx vitest run tests/agent-live.test.ts`
   （注：vitest 4 已无 `--include` 旗号，勿用）
 - `tests/agent-drafts.test.ts` 在全量并行下偶发 5s 超时（单跑 852ms 即捷）——共享测试库之粮道拥塞，未调 `testTimeout`
+
+## 测试覆盖欠账（2026-09-30 进度统一审计沉淀）
+
+全量测试实跑 30 文件 / 226 用例全绿（2 例为 DeepSeek 真打，无密钥自跳）。以下四处**有代码、零自动化覆盖**，改动时无回归网：
+
+- **时间线甘特**（图六·C）：逻辑全内联在 `timeline/page.tsx`，未抽 lib，`tests/` 零命中——逾期判定、条宽计算、里程碑分组三处口径无保护。**本条风险最高。**
+- **看板拖拽**（图二 / 一期）：`moveTaskAction` 无测试；原作战图 Task 6 所写「端到端（Playwright）」从未落地，仓库无 playwright 依赖。
+- **两个对话端点**（图三上 / 下）：`POST /api/chat` 与 `POST /api/chat/commit` 在 `tests/` 中零引用，401/400/403 分支与事务回滚仅有代码路径。
+- **`jssdk-config` 路由**（图七 Plan A）：仅单测 `feishu.ts` 两函数与签名串，路由自身无测试。
+
+另有两处**代码已修、测试未跟**：`snapshot.ts` 的三段 `id=` 与「今天是」两处修复（图八），`tests/agent-snapshot.test.ts` 三例均未断言。
+
+## 一期·标签与视图 简化备案（2026-09-30 补）
+
+- 唯一索引建在 `(team_id, name)` 普通两列；大小写不敏感去重交由服务层 `lower()` 查询承担——避开 drizzle-kit push 对表达式索引 diff 的不稳（作战图 Step 6 已改口径）
+- 标签随 `updateTaskAction` 的 `labelIds` 字段一并提交，同构于既有 `successorIds` 之形制，未单设 `setTaskLabelsAction`
+- 筛选态写 URL query，非法参数由 `parseFilters` 容错忽略而非抛错
+- 看板分组由纯函数 `deriveColumns` 即时派生，四维分组下拖拽皆收敛于同一 `moveTaskAction` 落库路径；列内手动排序沿图二备案未做
+- teacher 在项目页无写入入口，由 `canWrite` + draggable disabled 保证；伪造拖拽请求由服务端 lib 层拒绝

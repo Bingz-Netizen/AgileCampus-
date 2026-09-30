@@ -1,5 +1,7 @@
 # AgileCampus 作战图二：骨架（项目 + 里程碑 + 任务 + 看板）Implementation Plan
 
+> **状态：已完成**（2026-09-30 逐条核对代码与测试）。证据：`src/lib/{project,task}.ts`、`board.tsx`（@dnd-kit + useOptimistic）、`tests/{project,task}.test.ts`。缺口：看板拖拽零自动化覆盖（Task 6 原定 Playwright 端到端从未落地）；「落列尾」未实现——`sortOrder` 不在 `updateTask` 白名单，拖后卡片仍按创建时顺序排。详见 [进度总览](../../PROGRESS.md)。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 在图一地基之上建成项目管理骨架——项目/里程碑/任务三表、项目列表与创建、项目详情页（里程碑 + 看板三列拖拽 + 任务 CRUD），全部经 TDD 验证。

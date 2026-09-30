@@ -1,5 +1,7 @@
 # AgileCampus 一期 · 标签与视图 实施计划
 
+> **状态：已完成**（2026-09-30 逐条核对代码与测试）。证据：`labels`/`task_labels` 两表、`src/lib/label.ts`（大小写不敏感查重 + 跨团队拒绝 + 事务全量替换）、`board-filters.ts` 五维筛选、`board-columns.ts` 四维分组、四维拖拽收敛于同一 `moveTaskAction` 落库路径。测试 `label.test.ts` 21 例、`board-filters.test.ts` 19 例，与作战图自定数目吻合。缺口：无。详见 [进度总览](../../PROGRESS.md)。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 为 AgileCampus 引入团队级共享标签、项目页筛选栏与看板多维度分组（各分组下拖拽均生效）。
