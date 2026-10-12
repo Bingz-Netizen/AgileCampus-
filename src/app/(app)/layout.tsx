@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth, signOut } from "@/lib/auth";
+import { countUnreadNotifications } from "@/lib/comment";
 
 export default async function AppLayout({
   children,
@@ -9,6 +10,7 @@ export default async function AppLayout({
 }) {
   const session = await auth();
   if (!session?.user) redirect("/login");
+  const unread = await countUnreadNotifications(session.user.id);
 
   return (
     <div className="min-h-screen">
@@ -35,6 +37,18 @@ export default async function AppLayout({
               className="rounded-field px-2.5 py-1.5 text-sm text-ink-soft transition-colors hover:bg-primary-soft hover:text-primary"
             >
               我的团队
+            </Link>
+            <Link
+              href="/notifications"
+              className="relative rounded-field px-2.5 py-1.5 text-sm text-ink-soft transition-colors hover:bg-primary-soft hover:text-primary"
+            >
+              通知
+              {unread > 0 && (
+                <span
+                  aria-label={`${unread} 条未读通知`}
+                  className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-high ring-2 ring-surface"
+                />
+              )}
             </Link>
             <Link
               href="/settings/tokens"

@@ -269,3 +269,106 @@ export const taskLabels = pgTable(
     index("task_labels_label_idx").on(t.labelId),
   ],
 );
+
+// ---- 协作留痕：任务评论 + 活动流 + 站内通知（二期）----
+
+// 评论的归档标记：重要讨论可标「决策 / 问题 / 交付」，自动进项目档案
+export const taskCommentKindEnum = pgEnum("task_comment_kind", [
+  "decision",
+  "issue",
+  "delivery",
+]);
+export type TaskCommentKind = (typeof taskCommentKindEnum.enumValues)[number];
+
+// 活动类型：时间线只合并「状态变更 + 依赖变更」（评论单独成表）
+export const taskActivityTypeEnum = pgEnum("task_activity_type", [
+  "status_changed",
+  "dependency_added",
+  "dependency_removed",
+]);
+export type TaskActivityType = (typeof taskActivityTypeEnum.enumValues)[number];
+
+// 站内通知类型：目前仅「被 @ 提及」一种
+export const notificationTypeEnum = pgEnum("notification_type", ["mention"]);
+export type NotificationType = (typeof notificationTypeEnum.enumValues)[number];
+
+// 附件以 dataURL 内联存 jsonb（无对象存储；MVP 规模可接受，单文件限 3MB）
+export type CommentAttachment = {
+  name: string;
+  type: string;
+  size: number;
+  dataUrl: string;
+};
+
+export const taskComments = pgTable(
+  "task_comments",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    taskId: uuid("task_id")
+      .notNull()
+      .references(() => tasks.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    // 回复：自引用指向被回复的评论，空＝顶层评论。父删则子回复随之。
+    parentId: uuid("parent_id").references((): AnyPgColumn => taskComments.id, {
+      onDelete: "cascade",
+    }),
+    content: text("content").notNull(),
+    mentions: jsonb("mentions").$type<string[]>().notNull().$defaultFn(() => []),
+    attachments: jsonb("attachments")
+      .$type<CommentAttachment[]>()
+      .notNull()
+      .$defaultFn(() => []),
+    kind: taskCommentKindEnum("kind"), // 归档标记，空＝普通评论
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("task_comments_task_idx").on(t.taskId),
+    index("task_comments_parent_idx").on(t.parentId),
+  ],
+);
+
+export const taskActivities = pgTable(
+  "task_activities",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    taskId: uuid("task_id")
+      .notNull()
+      .references(() => tasks.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    type: taskActivityTypeEnum("type").notNull(),
+    payload: jsonb("payload")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .$defaultFn(() => ({})),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("task_activities_task_idx").on(t.taskId)],
+);
+
+export const notifications = pgTable(
+  "notifications",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    type: notificationTypeEnum("type").notNull(),
+    projectId: uuid("project_id").references(() => projects.id, {
+      onDelete: "cascade",
+    }),
+    taskId: uuid("task_id").references(() => tasks.id, { onDelete: "cascade" }),
+    commentId: uuid("comment_id").references(() => taskComments.id, {
+      onDelete: "cascade",
+    }),
+    readAt: timestamp("read_at"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("notifications_user_idx").on(t.userId),
+    index("notifications_user_read_idx").on(t.userId, t.readAt),
+  ],
+);

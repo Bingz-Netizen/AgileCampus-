@@ -47,3 +47,12 @@ next-env.d.ts
 # 本机 agent 工具配置（.agents/ 与 .claude/skills/ 内容重复）
 /.agents/
 /.claude/launch.json
+
+# 本机开发脚本（一键启动等；init-test-db.sql 已跟踪不受影响）
+/scripts/
+
+# IDE 配置
+.idea/
+
+# AI 开发上下文文档（非功能代码）
+Project.md

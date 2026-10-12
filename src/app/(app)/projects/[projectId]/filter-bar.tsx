@@ -42,9 +42,16 @@ export function FilterBar({
   const filters = parseFilters(new URLSearchParams(searchParams.toString()));
 
   // 筛选态写入 URL：可分享、可刷新保持、可后退。scroll:false 免得跳回页首。
+  // 保留 view/focus（三视图与跨视图高亮），改筛选不切视图、不丢定位。
   function push(next: BoardFilters) {
     const qs = serializeFilters(next);
-    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    const params = new URLSearchParams(qs);
+    for (const key of ["view", "focus"] as const) {
+      const v = searchParams.get(key);
+      if (v) params.set(key, v);
+    }
+    const out = params.toString();
+    router.replace(out ? `${pathname}?${out}` : pathname, { scroll: false });
   }
 
   function toggle(key: "assignee" | "priority" | "label" | "milestone", id: string) {

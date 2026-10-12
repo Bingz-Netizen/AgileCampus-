@@ -7,6 +7,8 @@ import {
   updateTask,
   setTaskSuccessors,
   listProjectDependencies,
+  addTaskDependency,
+  removeTaskDependency,
 } from "@/lib/task";
 import { resetDb } from "./helpers";
 
@@ -84,5 +86,54 @@ describe("后置任务关联", () => {
     const { outsider, student, project } = await scene();
     const a = await createTask(student.id, project.id, { title: "甲" });
     await expect(setTaskSuccessors(outsider.id, a.id, [])).rejects.toThrow("没有权限");
+  });
+});
+
+describe("依赖（完成-开始）", () => {
+  beforeEach(resetDb);
+
+  it("添加并删除前置依赖", async () => {
+    const { student, project } = await scene();
+    const a = await createTask(student.id, project.id, { title: "甲" });
+    const b = await createTask(student.id, project.id, { title: "乙" });
+    await addTaskDependency(student.id, a.id, b.id);
+    let deps = await listProjectDependencies(student.id, project.id);
+    expect(deps).toHaveLength(1);
+    expect(deps[0]).toMatchObject({ predecessorId: a.id, successorId: b.id });
+
+    await removeTaskDependency(student.id, a.id, b.id);
+    deps = await listProjectDependencies(student.id, project.id);
+    expect(deps).toHaveLength(0);
+  });
+
+  it("防重复与自指", async () => {
+    const { student, project } = await scene();
+    const a = await createTask(student.id, project.id, { title: "甲" });
+    const b = await createTask(student.id, project.id, { title: "乙" });
+    await addTaskDependency(student.id, a.id, b.id);
+    await expect(addTaskDependency(student.id, a.id, b.id)).rejects.toThrow("已存在");
+    await expect(addTaskDependency(student.id, a.id, a.id)).rejects.toThrow("自身");
+  });
+
+  it("防间接循环（A→B→C 后禁 C→A）", async () => {
+    const { student, project } = await scene();
+    const a = await createTask(student.id, project.id, { title: "甲" });
+    const b = await createTask(student.id, project.id, { title: "乙" });
+    const c = await createTask(student.id, project.id, { title: "丙" });
+    await addTaskDependency(student.id, a.id, b.id); // a→b
+    await addTaskDependency(student.id, b.id, c.id); // b→c
+    await expect(addTaskDependency(student.id, c.id, a.id)).rejects.toThrow("循环");
+  });
+
+  it("前置未完成阻断后置完成，前置完成后放行", async () => {
+    const { student, project } = await scene();
+    const a = await createTask(student.id, project.id, { title: "甲" });
+    const b = await createTask(student.id, project.id, { title: "乙" });
+    await addTaskDependency(student.id, a.id, b.id);
+    await expect(updateTask(student.id, b.id, { status: "done" })).rejects.toThrow("前置");
+    await updateTask(student.id, a.id, { status: "done" });
+    await expect(updateTask(student.id, b.id, { status: "done" })).resolves.toMatchObject({
+      status: "done",
+    });
   });
 });

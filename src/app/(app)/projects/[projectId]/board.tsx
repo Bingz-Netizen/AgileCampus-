@@ -27,6 +27,7 @@ export type BoardTask = {
   assigneeId: string | null;
   milestoneId: string | null;
   labels: { id: string; name: string; color: string }[];
+  commentCount: number;
 };
 
 function Column({
@@ -39,6 +40,7 @@ function Column({
   allTasks,
   allLabels,
   dependencies,
+  blockedBy,
 }: {
   column: BoardColumn;
   tasks: BoardTask[];
@@ -49,6 +51,7 @@ function Column({
   allTasks: { id: string; title: string }[];
   allLabels: Option[];
   dependencies: { predecessorId: string; successorId: string }[];
+  blockedBy: Record<string, string[]>;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: column.key });
 
@@ -74,6 +77,7 @@ function Column({
           allTasks={allTasks}
           allLabels={allLabels}
           dependencies={dependencies}
+          blockedBy={blockedBy}
         />
       ))}
     </div>
@@ -90,6 +94,7 @@ export function Board({
   allTasks,
   allLabels,
   dependencies,
+  blockedBy,
 }: {
   projectId: string;
   tasks: BoardTask[];
@@ -100,6 +105,7 @@ export function Board({
   allTasks: { id: string; title: string }[];
   allLabels: Option[];
   dependencies: { predecessorId: string; successorId: string }[];
+  blockedBy: Record<string, string[]>;
 }) {
   const [, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -122,6 +128,12 @@ export function Board({
     const task = optimisticTasks.find((t) => t.id === taskId);
     // 已在目标列则无须提交
     if (!column || !task || column.matches(task)) return;
+
+    // 完成-开始依赖：前置未完成时，后置任务不可拖入「已完成」（仅 status 分组会提交 done 补丁）
+    if (column.patch.status === "done" && (blockedBy[taskId]?.length ?? 0) > 0) {
+      setError("存在未完成的前置任务，不能拖到已完成");
+      return;
+    }
 
     startTransition(async () => {
       setError(null);
@@ -148,6 +160,7 @@ export function Board({
             allTasks={allTasks}
             allLabels={allLabels}
             dependencies={dependencies}
+            blockedBy={blockedBy}
           />
         ))}
       </div>

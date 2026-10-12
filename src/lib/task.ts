@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
 import type { DbTx } from "@/db";
 import {
@@ -11,10 +11,11 @@ import {
   type TaskPriority,
   type TaskStatus,
 } from "@/db/schema";
-import { AppError, ForbiddenError } from "./errors";
+import { AppError, ForbiddenError, isUniqueViolation } from "./errors";
 import { getTeamMembership } from "./team";
 import { getProjectForUser } from "./project";
 import { notifyTaskAssigned, notifyTaskCompleted } from "./notify";
+import { recordTaskActivity } from "./activity";
 
 // 任务写操作角色：admin + student（teacher 只读，设计文档 §5）
 const TASK_WRITE_ROLES = ["admin", "student"];
@@ -121,6 +122,20 @@ export async function updateTask(
   if (patch.assigneeId) await validateAssignee(access.project.teamId, patch.assigneeId);
   if (patch.milestoneId) await validateMilestone(task.projectId, patch.milestoneId);
 
+  // 完成-开始依赖：标记 done 前校验无未完成的前置任务（后置任务被前置阻断，不得完成）。
+  // 仅限「非 done → done」的跃迁，避免已完成任务补保存时被历史前置误拦。
+  if (patch.status === "done" && task.status !== "done") {
+    const blockers = await exec
+      .select({ title: tasks.title })
+      .from(taskDependencies)
+      .innerJoin(tasks, eq(taskDependencies.predecessorId, tasks.id))
+      .where(and(eq(taskDependencies.successorId, taskId), ne(tasks.status, "done")));
+    if (blockers.length > 0)
+      throw new AppError(
+        `存在未完成的前置任务（${blockers.map((b) => b.title).join("、")}），暂不能标记完成`,
+      );
+  }
+
   // 显式白名单构造，勿用 ...patch 展开：运行时宽对象可夹带 projectId/sortOrder 等越权字段
   const [updated] = await exec
     .update(tasks)
@@ -140,6 +155,17 @@ export async function updateTask(
     .where(eq(tasks.id, taskId))
     .returning();
   if (!updated) throw new AppError("任务不存在");
+
+  // 状态变更留痕：任务时间线合并展示「状态变更」与评论（含事务内一并写入，回滚即撤）
+  if (patch.status !== undefined && patch.status !== task.status) {
+    await recordTaskActivity({
+      taskId,
+      userId: actorId,
+      type: "status_changed",
+      payload: { from: task.status, to: patch.status },
+      tx: opts?.tx,
+    });
+  }
 
   if (!opts?.tx) {
     // 改派：通知新负责人
@@ -297,7 +323,29 @@ export async function getTaskDetail(actorId: string, taskId: string) {
   return { ...row, labels: byTask.get(row.id) ?? [] };
 }
 
-// 设置 predecessor 的后置任务（先删旧再插新）。简单关联：仅防直接成环，不强制阻断执行。
+// 沿既有依赖边（predecessor→successor）做 BFS：fromId 是否可「到达」toId。
+// 若可达，则新增 fromId→toId 即成环。全项目规模小，逐层查库即可。
+async function dependencyReaches(fromId: string, toId: string): Promise<boolean> {
+  let frontier = [fromId];
+  const visited = new Set<string>();
+  while (frontier.length > 0) {
+    const next: string[] = [];
+    for (const id of frontier) {
+      if (id === toId) return true;
+      if (visited.has(id)) continue;
+      visited.add(id);
+      const rows = await db
+        .select({ successorId: taskDependencies.successorId })
+        .from(taskDependencies)
+        .where(eq(taskDependencies.predecessorId, id));
+      for (const r of rows) next.push(r.successorId);
+    }
+    frontier = next;
+  }
+  return false;
+}
+
+// 设置 predecessor 的后置任务（先删旧再插新）。防自指、防成环（含间接环）。
 export async function setTaskSuccessors(
   actorId: string,
   predecessorId: string,
@@ -315,16 +363,9 @@ export async function setTaskSuccessors(
       .where(eq(tasks.id, sid));
     if (!s || s.projectId !== pred.projectId)
       throw new AppError("后置任务不属于该项目");
-    const [back] = await db
-      .select({ id: taskDependencies.id })
-      .from(taskDependencies)
-      .where(
-        and(
-          eq(taskDependencies.predecessorId, sid),
-          eq(taskDependencies.successorId, predecessorId),
-        ),
-      );
-    if (back) throw new AppError("后置任务不可构成循环");
+    // 防成环（含间接环）：若 sid 已可达 predecessor，则新增 predecessor→sid 成环
+    if (await dependencyReaches(sid, predecessorId))
+      throw new AppError("后置任务不可构成循环");
   }
 
   await db.transaction(async (tx) => {
@@ -334,6 +375,75 @@ export async function setTaskSuccessors(
         .insert(taskDependencies)
         .values(successorIds.map((sid) => ({ predecessorId, successorId: sid })));
     }
+  });
+}
+
+// 新增一条完成-开始依赖：predecessor 未完成前，successor 不可完成（详情页「依赖」区块用）。
+// 防自指、防重复、防成环（含间接环）；前置/后置须同项目。
+export async function addTaskDependency(
+  actorId: string,
+  predecessorId: string,
+  successorId: string,
+) {
+  if (predecessorId === successorId) throw new AppError("前置任务不可指向自身");
+  const [pred] = await db.select().from(tasks).where(eq(tasks.id, predecessorId));
+  if (!pred) throw new AppError("前置任务不存在");
+  const [succ] = await db.select().from(tasks).where(eq(tasks.id, successorId));
+  if (!succ) throw new AppError("后置任务不存在");
+  if (pred.projectId !== succ.projectId)
+    throw new AppError("前置任务须与后置任务同属一个项目");
+  await requireTaskWrite(actorId, succ.projectId);
+
+  // 若后置已可达前置（沿既有依赖），新增前置→后置即成环
+  if (await dependencyReaches(successorId, predecessorId))
+    throw new AppError("会形成循环依赖，禁止添加");
+
+  try {
+    await db.transaction(async (tx) => {
+      await tx.insert(taskDependencies).values({ predecessorId, successorId });
+      // 依赖变更留痕（记在后置任务上，时间线合并展示）
+      await recordTaskActivity({
+        taskId: successorId,
+        userId: actorId,
+        type: "dependency_added",
+        payload: { predecessorId, predecessorTitle: pred.title },
+        tx,
+      });
+    });
+  } catch (e) {
+    if (isUniqueViolation(e)) throw new AppError("该前置依赖已存在");
+    throw e;
+  }
+}
+
+// 删除一条前置依赖（详情页「依赖」区块用）。删除前由前端二次确认。
+export async function removeTaskDependency(
+  actorId: string,
+  predecessorId: string,
+  successorId: string,
+) {
+  const [succ] = await db.select().from(tasks).where(eq(tasks.id, successorId));
+  if (!succ) throw new AppError("后置任务不存在");
+  const [pred] = await db.select().from(tasks).where(eq(tasks.id, predecessorId));
+  const predecessorTitle = pred?.title ?? predecessorId;
+  await requireTaskWrite(actorId, succ.projectId);
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(taskDependencies)
+      .where(
+        and(
+          eq(taskDependencies.predecessorId, predecessorId),
+          eq(taskDependencies.successorId, successorId),
+        ),
+      );
+    // 依赖变更留痕（记在后置任务上，时间线合并展示）
+    await recordTaskActivity({
+      taskId: successorId,
+      userId: actorId,
+      type: "dependency_removed",
+      payload: { predecessorId, predecessorTitle },
+      tx,
+    });
   });
 }
 

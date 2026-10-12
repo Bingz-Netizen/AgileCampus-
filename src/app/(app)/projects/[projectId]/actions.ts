@@ -3,7 +3,13 @@
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { auth } from "@/lib/auth";
-import { createTask, updateTask, deleteTask, setTaskSuccessors } from "@/lib/task";
+import {
+  createTask,
+  updateTask,
+  deleteTask,
+  addTaskDependency,
+  removeTaskDependency,
+} from "@/lib/task";
 import { setTaskLabels } from "@/lib/label";
 import { createMilestone } from "@/lib/project";
 import { AppError, ForbiddenError } from "@/lib/errors";
@@ -156,10 +162,6 @@ export async function updateTaskAction(
   if (!parsed.success) return { error: parsed.error.issues[0].message };
 
   const { taskId, projectId, ...patch } = parsed.data;
-  const successorIds = formData
-    .getAll("successorIds")
-    .map(String)
-    .filter((s) => /^[0-9a-f-]{36}$/i.test(s));
   const labelIds = formData
     .getAll("labelIds")
     .map(String)
@@ -175,7 +177,6 @@ export async function updateTaskAction(
       priority: patch.priority,
       completionNote: patch.completionNote ?? null,
     });
-    await setTaskSuccessors(session.user.id, taskId, successorIds);
     await setTaskLabels(session.user.id, taskId, labelIds);
   } catch (e) {
     if (e instanceof ForbiddenError) return { error: "没有权限修改任务" };
@@ -209,5 +210,56 @@ export async function deleteTaskAction(
     throw e;
   }
   revalidatePath(`/projects/${parsed.data.projectId}`);
+  return null;
+}
+
+// 依赖（前置任务）增删：taskId 为后置任务（当前编辑的任务），predecessorId 为前置任务。
+const dependencySchema = z.object({
+  taskId: z.uuid(),
+  projectId: z.uuid(),
+  predecessorId: z.uuid(),
+});
+
+export async function addDependencyAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const session = await auth();
+  if (!session?.user) return { error: "请先登录" };
+
+  const parsed = dependencySchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return { error: "参数无效" };
+
+  const { taskId, projectId, predecessorId } = parsed.data;
+  try {
+    await addTaskDependency(session.user.id, predecessorId, taskId);
+  } catch (e) {
+    if (e instanceof ForbiddenError) return { error: "没有权限修改依赖" };
+    if (e instanceof AppError) return { error: e.message };
+    throw e;
+  }
+  revalidatePath(`/projects/${projectId}`);
+  return null;
+}
+
+export async function removeDependencyAction(
+  _prev: FormState,
+  formData: FormData,
+): Promise<FormState> {
+  const session = await auth();
+  if (!session?.user) return { error: "请先登录" };
+
+  const parsed = dependencySchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return { error: "参数无效" };
+
+  const { taskId, projectId, predecessorId } = parsed.data;
+  try {
+    await removeTaskDependency(session.user.id, predecessorId, taskId);
+  } catch (e) {
+    if (e instanceof ForbiddenError) return { error: "没有权限修改依赖" };
+    if (e instanceof AppError) return { error: e.message };
+    throw e;
+  }
+  revalidatePath(`/projects/${projectId}`);
   return null;
 }
