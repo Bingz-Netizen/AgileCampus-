@@ -1,6 +1,7 @@
-import { and, asc, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
+  commentEdits,
   notifications,
   projects,
   taskActivities,
@@ -8,11 +9,15 @@ import {
   tasks,
   users,
   type CommentAttachment,
+  type CommentImportanceType,
+  type TaskActivityType,
   type TaskCommentKind,
+  type TeamRole,
 } from "@/db/schema";
 import { AppError, ForbiddenError } from "./errors";
 import { getProjectForUser } from "./project";
 import { listTeamMembers } from "./team";
+import { recordTaskActivity } from "./activity";
 
 // 评论/讨论属「协作留痕」：全体项目成员（含 teacher）皆可读可写，非任务写操作。
 // 权限口径区别于 requireTaskWrite（admin+student），这里仅要求项目成员。
@@ -26,6 +31,26 @@ async function requireTaskMemberAccess(actorId: string, taskId: string) {
   const access = await getProjectForUser(actorId, task.projectId);
   if (!access) throw new ForbiddenError();
   return { task, access };
+}
+
+// ---- 评论权限口径（任务评论讨论区）----
+// 重要标记：仅 admin/teacher 可改（student 即使自己的评论也不可标记/取消）。
+export function canMarkImportant(role: TeamRole): boolean {
+  return role === "admin" || role === "teacher";
+}
+
+// 编辑：仅作者可编辑自己的评论（admin/teacher 亦不代改，避免篡改讨论记录）。
+export function canEditComment(actorId: string, comment: { userId: string }): boolean {
+  return actorId === comment.userId;
+}
+
+// 删除：作者删己，admin/teacher 可删任何，student 不可删他人。
+export function canDeleteComment(
+  actorId: string,
+  role: TeamRole,
+  comment: { userId: string },
+): boolean {
+  return actorId === comment.userId || role === "admin" || role === "teacher";
 }
 
 // 校验 mentions 均为该团队成员（去重；排除操作者自身在通知阶段处理）
@@ -123,6 +148,148 @@ export async function markCommentKind(
   return updated;
 }
 
+// 标记 / 取消标记「重要评论」（类型 decision/issue/delivery/reference）。仅 admin/teacher。
+export async function markCommentImportant(
+  actorId: string,
+  commentId: string,
+  input: { important: boolean; type?: CommentImportanceType },
+) {
+  const [comment] = await db
+    .select({ id: taskComments.id, taskId: taskComments.taskId })
+    .from(taskComments)
+    .where(eq(taskComments.id, commentId));
+  if (!comment) throw new AppError("评论不存在");
+
+  const { access } = await requireTaskMemberAccess(actorId, comment.taskId);
+  if (!canMarkImportant(access.role)) {
+    throw new ForbiddenError("仅教师或管理员可标记重要评论");
+  }
+  if (input.important && !input.type) {
+    throw new AppError("请选择重要评论类型");
+  }
+
+  const [updated] = await db
+    .update(taskComments)
+    .set(
+      input.important
+        ? {
+            isImportant: true,
+            importanceType: input.type ?? null,
+            importantBy: actorId,
+            importantAt: new Date(),
+          }
+        : {
+            isImportant: false,
+            importanceType: null,
+            importantBy: null,
+            importantAt: null,
+          },
+    )
+    .where(eq(taskComments.id, commentId))
+    .returning();
+  return updated;
+}
+
+// 编辑评论：仅作者。旧文进 comment_edits 历史，editCount +1、记 editedAt。
+export async function editComment(actorId: string, commentId: string, content: string) {
+  const [comment] = await db
+    .select()
+    .from(taskComments)
+    .where(eq(taskComments.id, commentId));
+  if (!comment) throw new AppError("评论不存在");
+
+  await requireTaskMemberAccess(actorId, comment.taskId);
+  if (!canEditComment(actorId, comment)) {
+    throw new ForbiddenError("仅评论作者可编辑自己的评论");
+  }
+  if (comment.deletedAt) throw new AppError("评论已删除");
+  if (comment.content === content) return comment;
+
+  await db.transaction(async (tx) => {
+    await tx.insert(commentEdits).values({
+      commentId,
+      editorId: actorId,
+      oldContent: comment.content,
+      newContent: content,
+    });
+    await tx
+      .update(taskComments)
+      .set({ content, editedAt: new Date(), editCount: comment.editCount + 1 })
+      .where(eq(taskComments.id, commentId));
+  });
+
+  const [updated] = await db
+    .select()
+    .from(taskComments)
+    .where(eq(taskComments.id, commentId));
+  return updated;
+}
+
+// 软删除评论：作者或 admin/teacher。删除重要评论时写入活动日志。
+export async function deleteComment(actorId: string, commentId: string) {
+  const [comment] = await db
+    .select({
+      id: taskComments.id,
+      taskId: taskComments.taskId,
+      userId: taskComments.userId,
+      isImportant: taskComments.isImportant,
+      deletedAt: taskComments.deletedAt,
+    })
+    .from(taskComments)
+    .where(eq(taskComments.id, commentId));
+  if (!comment) throw new AppError("评论不存在");
+
+  const { access } = await requireTaskMemberAccess(actorId, comment.taskId);
+  if (!canDeleteComment(actorId, access.role, comment)) {
+    throw new ForbiddenError("无权删除该评论");
+  }
+  if (comment.deletedAt) return comment; // 幂等：已删除直接返回
+
+  const [updated] = await db
+    .update(taskComments)
+    .set({ deletedAt: new Date(), deletedBy: actorId })
+    .where(eq(taskComments.id, commentId))
+    .returning();
+
+  // admin/teacher 删除重要评论须留痕（作者删己的普通评论不额外记活动）
+  if (comment.isImportant) {
+    await recordTaskActivity({
+      taskId: comment.taskId,
+      userId: actorId,
+      type: "comment_deleted",
+      payload: { commentId: comment.id, important: true },
+    });
+  }
+  return updated;
+}
+
+// 编辑历史：作者或 admin/teacher 可查看（旧文 → 新文、编辑人、编辑时间）
+export async function listCommentHistory(actorId: string, commentId: string) {
+  const [comment] = await db
+    .select({ id: taskComments.id, taskId: taskComments.taskId, userId: taskComments.userId })
+    .from(taskComments)
+    .where(eq(taskComments.id, commentId));
+  if (!comment) throw new AppError("评论不存在");
+
+  const { access } = await requireTaskMemberAccess(actorId, comment.taskId);
+  if (comment.userId !== actorId && !canMarkImportant(access.role)) {
+    throw new ForbiddenError("无权查看该评论的编辑历史");
+  }
+
+  return db
+    .select({
+      id: commentEdits.id,
+      oldContent: commentEdits.oldContent,
+      newContent: commentEdits.newContent,
+      editorName: users.name,
+      createdAt: commentEdits.createdAt,
+    })
+    .from(commentEdits)
+    .leftJoin(users, eq(commentEdits.editorId, users.id))
+    .where(eq(commentEdits.commentId, commentId))
+    .orderBy(asc(commentEdits.createdAt));
+}
+
 export type CommentDto = {
   id: string;
   taskId: string;
@@ -133,6 +300,11 @@ export type CommentDto = {
   mentions: string[];
   attachments: CommentAttachment[];
   kind: TaskCommentKind | null;
+  isImportant: boolean;
+  importanceType: CommentImportanceType | null;
+  editedAt: Date | null;
+  editCount: number;
+  deletedAt: Date | null;
   createdAt: Date;
 };
 
@@ -149,6 +321,11 @@ export async function listTaskComments(actorId: string, taskId: string): Promise
       mentions: taskComments.mentions,
       attachments: taskComments.attachments,
       kind: taskComments.kind,
+      isImportant: taskComments.isImportant,
+      importanceType: taskComments.importanceType,
+      editedAt: taskComments.editedAt,
+      editCount: taskComments.editCount,
+      deletedAt: taskComments.deletedAt,
       createdAt: taskComments.createdAt,
     })
     .from(taskComments)
@@ -159,7 +336,7 @@ export async function listTaskComments(actorId: string, taskId: string): Promise
 
 export type ActivityDto = {
   id: string;
-  type: "status_changed" | "dependency_added" | "dependency_removed";
+  type: TaskActivityType;
   payload: Record<string, unknown>;
   actorName: string | null;
   createdAt: Date;
@@ -201,7 +378,8 @@ export async function countProjectTaskComments(
   return map;
 }
 
-// 项目档案：被标记「决策/问题/交付」的评论，按时间倒序
+// 项目档案：重要评论中「决策 / 交付」自动归档；旧 kind 标记（决策/问题/交付）保留兼容。
+// 软删除的评论仍保留在档案中（删除记录不参与「重要」筛选，但档案保留）。
 export async function listProjectArchives(actorId: string, projectId: string) {
   const access = await getProjectForUser(actorId, projectId);
   if (!access) throw new ForbiddenError();
@@ -213,13 +391,24 @@ export async function listProjectArchives(actorId: string, projectId: string) {
       taskTitle: tasks.title,
       content: taskComments.content,
       kind: taskComments.kind,
+      importanceType: taskComments.importanceType,
+      isImportant: taskComments.isImportant,
+      deletedAt: taskComments.deletedAt,
       authorName: users.name,
       createdAt: taskComments.createdAt,
     })
     .from(taskComments)
     .innerJoin(tasks, eq(taskComments.taskId, tasks.id))
     .innerJoin(users, eq(taskComments.userId, users.id))
-    .where(and(eq(tasks.projectId, projectId), isNotNull(taskComments.kind)))
+    .where(
+      and(
+        eq(tasks.projectId, projectId),
+        or(
+          isNotNull(taskComments.kind),
+          inArray(taskComments.importanceType, ["decision", "delivery"]),
+        ),
+      ),
+    )
     .orderBy(desc(taskComments.createdAt));
 }
 
@@ -243,7 +432,11 @@ export async function listMyMentionNotifications(actorId: string) {
     .innerJoin(taskComments, eq(notifications.commentId, taskComments.id))
     .innerJoin(users, eq(taskComments.userId, users.id))
     .where(eq(notifications.userId, actorId))
-    .orderBy(desc(notifications.createdAt));
+    // 未读优先（read_at 为空的排前），组内按创建时间倒序（最新在前）
+    .orderBy(
+      sql`(${notifications.readAt} is null) desc`,
+      desc(notifications.createdAt),
+    );
 }
 
 export async function countUnreadNotifications(actorId: string): Promise<number> {

@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import type { MemberLoad, UrgentTask } from "@/lib/member-load";
+import type { LoadLevel, MemberLoad, UrgentTask } from "@/lib/member-load";
+import { withTask } from "./view-nav";
 
 // 成员任务负载视图（仅 PC 端）：横向卡片 + 半圆仪表 + 最紧急 3 条 + 右侧抽屉。
 // 交互全部走软导航（router.replace，scroll:false），复用既有看板筛选与 ?task 深链。
@@ -25,19 +26,18 @@ const PRIORITY_BADGE: Record<string, string> = {
   low: "bg-low-soft text-low",
 };
 
-type Tone = "low" | "mid" | "high";
 // 复用项目既有语义色：绿=done、黄=medium、红=high（见 globals.css @theme）
-const TONE_TEXT: Record<Tone, string> = {
-  low: "text-done",
-  mid: "text-medium",
-  high: "text-high",
+const LEVEL_TONE: Record<LoadLevel, string> = {
+  normal: "text-done",
+  busy: "text-medium",
+  overload: "text-high",
 };
 
-function loadTone(percent: number): Tone {
-  if (percent > 85) return "high";
-  if (percent >= 60) return "mid";
-  return "low";
-}
+const LEVEL_LABEL: Record<LoadLevel, string> = {
+  normal: "正常",
+  busy: "较忙",
+  overload: "过载",
+};
 
 export function MemberLoadView({
   projectId,
@@ -69,10 +69,8 @@ export function MemberLoadView({
   }
 
   function openTask(taskId: string) {
-    const params = new URLSearchParams(searchParams.toString());
-    params.set("task", taskId);
-    params.set("view", "kanban");
-    router.replace(`/projects/${projectId}?${params.toString()}`, { scroll: false });
+    const qs = withTask(new URLSearchParams(searchParams.toString()), taskId);
+    router.replace(`/projects/${projectId}?${qs}`);
   }
 
   const drawer = members.find((m) => m.id === drawerId) ?? null;
@@ -82,7 +80,7 @@ export function MemberLoadView({
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="text-sm font-semibold text-ink-soft">成员负载</h2>
         <span className="text-xs text-ink-faint">
-          绿 &lt;60% · 黄 60–85% · 红 &gt;85%
+          绿 0–59 · 黄 60–79 · 红 80–100
         </span>
       </div>
 
@@ -131,7 +129,7 @@ function MemberCard({
   onOpenTask: (taskId: string) => void;
   onOpenDrawer: () => void;
 }) {
-  const tone = loadTone(member.loadPercent);
+  const level = member.loadLevel;
   const hasOverdue = member.overdueCount > 0;
 
   return (
@@ -160,9 +158,10 @@ function MemberCard({
         )}
       </div>
 
-      <div className={`mt-3 flex flex-col items-center ${TONE_TEXT[tone]}`}>
-        <Gauge percent={member.loadPercent} />
-        <span className="mt-1 text-xs text-ink-soft">
+      <div className={`mt-3 flex flex-col items-center ${LEVEL_TONE[level]}`}>
+        <Gauge score={member.loadScore} />
+        <span className="mt-1 text-xs font-medium">{LEVEL_LABEL[level]}</span>
+        <span className="text-xs text-ink-soft">
           {member.openCount} 项未完成{member.doneCount > 0 ? ` · ${member.doneCount} 项完成` : ""}
         </span>
       </div>
@@ -191,12 +190,12 @@ function MemberCard({
   );
 }
 
-// 半圆仪表：180° 弧，按负载百分比填充；颜色随 tone（由外层 text-* 类染色）。
-function Gauge({ percent }: { percent: number }) {
-  const pct = Math.min(100, Math.max(0, percent));
+// 半圆仪表：180° 弧，按负载评分填充（0-100）；颜色随 loadLevel（由外层 text-* 类染色）。
+function Gauge({ score }: { score: number }) {
+  const pct = Math.min(100, Math.max(0, score));
   const d = "M 10 50 A 40 40 0 0 1 90 50";
   return (
-    <div className="relative h-16 w-28" title={`负载 ${percent}%`}>
+    <div className="relative h-16 w-28" title={`负载 ${score} 分`}>
       <svg viewBox="0 0 100 60" className="h-full w-full" aria-hidden>
         <path
           d={d}
@@ -218,7 +217,7 @@ function Gauge({ percent }: { percent: number }) {
         />
       </svg>
       <span className="absolute inset-x-0 top-1/2 -translate-y-1/2 text-center text-lg font-semibold leading-none">
-        {percent}%
+        {score}
       </span>
     </div>
   );

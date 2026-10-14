@@ -64,7 +64,7 @@ describe("POST /api/agent/tasks/:taskId/subtasks", () => {
     const { owner, student, parent, token } = await scene();
     const res = await newSubtask(
       post(
-        { title: "子：写测试", assigneeId: student.id, dueDate: "2026-09-01", priority: "high" },
+        { title: "子：写测试", assigneeIds: [student.id], dueDate: "2026-09-01", priority: "high" },
         token,
       ),
       ctx(parent.id),
@@ -72,7 +72,7 @@ describe("POST /api/agent/tasks/:taskId/subtasks", () => {
     expect(res.status).toBe(200);
 
     const [sub] = await listSubtasks(owner.id, parent.id);
-    expect(sub.assigneeName).toBe("student");
+    expect(sub.assigneeNames).toBe("student");
     expect(sub.dueDate).toBe("2026-09-01");
     expect(sub.priority).toBe("high");
   });

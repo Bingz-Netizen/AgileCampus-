@@ -35,11 +35,12 @@ export async function GET(req: Request, ctx: Ctx) {
     return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
   }
   const f = parsed.data;
+  const assigneeId = f.assigneeId;
 
   try {
     let rows = await listProjectTasks(userId, projectId);
     if (f.status) rows = rows.filter((t) => t.status === f.status);
-    if (f.assigneeId) rows = rows.filter((t) => t.assigneeId === f.assigneeId);
+    if (assigneeId) rows = rows.filter((t) => t.assigneeIds.includes(assigneeId));
     if (f.dueBefore) rows = rows.filter((t) => t.dueDate !== null && t.dueDate <= f.dueBefore!);
 
     return NextResponse.json({
@@ -52,8 +53,8 @@ export async function GET(req: Request, ctx: Ctx) {
         startDate: t.startDate,
         dueDate: t.dueDate,
         milestoneId: t.milestoneId,
-        assigneeId: t.assigneeId,
-        assigneeName: t.assigneeName,
+        assigneeIds: t.assigneeIds,
+        assigneeNames: t.assigneeNames,
         completionNote: t.completionNote,
         updatedAt: t.updatedAt,
       })),
@@ -66,7 +67,7 @@ export async function GET(req: Request, ctx: Ctx) {
 const createSchema = z.object({
   title: z.string().min(1),
   description: z.string().optional(),
-  assigneeId: z.uuid().optional(),
+  assigneeIds: z.array(z.uuid()).optional(),
   startDate: z.string().optional(),
   dueDate: z.string().optional(),
   milestoneId: z.uuid().optional(),

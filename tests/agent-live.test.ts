@@ -26,7 +26,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY)("真实 DeepSeek 演武", () => {
       description: "AI 项目管理助手研发",
     });
     await createMilestone(owner.id, project.id, { title: "中期答辩", targetDate: "2026-09-01" });
-    await createTask(owner.id, project.id, { title: "调研现有方案", assigneeId: zhouyu.id });
+    await createTask(owner.id, project.id, { title: "调研现有方案", assigneeIds: [zhouyu.id] });
 
     const snap = await buildProjectSnapshot(owner.id, project.id);
     console.log("\n======== 快照 ========\n" + snap);

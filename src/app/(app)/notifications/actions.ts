@@ -19,7 +19,7 @@ export async function markReadAction(formData: FormData) {
     await markNotificationRead(session.user.id, id);
   }
   revalidatePath("/notifications");
-  redirect(`/projects/${projectId}?task=${taskId}&view=kanban`);
+  redirect(`/projects/${projectId}?task=${taskId}`);
 }
 
 export async function markAllReadAction() {

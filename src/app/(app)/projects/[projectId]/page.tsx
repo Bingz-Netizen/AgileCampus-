@@ -23,6 +23,7 @@ import { EmptyState } from "./empty-state";
 import { ChatPanel } from "./chat-panel";
 import { FilterBar } from "./filter-bar";
 import { MemberLoadView } from "./member-load-view";
+import { TaskDetail, type TaskDetailTask } from "./task-detail";
 
 export default async function ProjectPage({
   params,
@@ -79,8 +80,8 @@ export default async function ProjectPage({
     priority: t.priority,
     startDate: t.startDate,
     dueDate: t.dueDate,
-    assigneeName: t.assigneeName,
-    assigneeId: t.assigneeId,
+    assigneeIds: t.assigneeIds,
+    assigneeNames: t.assigneeNames,
     milestoneId: t.milestoneId,
     labels: t.labels,
     commentCount: commentCounts[t.id] ?? 0,
@@ -95,8 +96,7 @@ export default async function ProjectPage({
     priority: t.priority,
     startDate: t.startDate,
     dueDate: t.dueDate,
-    assigneeId: t.assigneeId,
-    assigneeName: t.assigneeName,
+    assigneeNames: t.assigneeNames,
     milestoneId: t.milestoneId,
     parentTaskId: t.parentTaskId,
     labels: t.labels,
@@ -113,6 +113,62 @@ export default async function ProjectPage({
   const todayMs = todayStart.getTime();
 
   const empty = visibleTasks.length === 0;
+
+  // 任务详情内嵌视图：?task=<taskId> 命中本项目任务时，整页替换为详情（替代原「新窗口整页」）。
+  // 数据复用本页已拉取的项目任务/成员/里程碑/标签/依赖，无额外取数。
+  const selectedTaskId = typeof sp.task === "string" ? sp.task : undefined;
+  const selectedRaw = selectedTaskId
+    ? projectTasks.find((t) => t.id === selectedTaskId)
+    : undefined;
+  if (selectedRaw) {
+    const selectedTask: TaskDetailTask = {
+      id: selectedRaw.id,
+      title: selectedRaw.title,
+      description: selectedRaw.description,
+      completionNote: selectedRaw.completionNote,
+      status: selectedRaw.status,
+      priority: selectedRaw.priority,
+      startDate: selectedRaw.startDate,
+      dueDate: selectedRaw.dueDate,
+      assigneeIds: selectedRaw.assigneeIds,
+      assigneeNames: selectedRaw.assigneeNames,
+      milestoneId: selectedRaw.milestoneId,
+      labels: selectedRaw.labels,
+    };
+    // 返回项目：仅移除 task/focus，保留 view 与筛选
+    const back = new URLSearchParams();
+    for (const [k, v] of Object.entries(sp)) {
+      if (typeof v === "string" && k !== "task" && k !== "focus") back.set(k, v);
+    }
+    const backQs = back.toString();
+    const backHref = `/projects/${projectId}${backQs ? `?${backQs}` : ""}`;
+
+    return (
+      <main className="mx-auto max-w-3xl space-y-6 py-8">
+        <header className="space-y-2">
+          <div>
+            <Link href={backHref} className="ac-btn-ghost">
+              ← 返回项目：{project.name}
+            </Link>
+          </div>
+          <h1 className="font-display text-2xl font-semibold text-ink">{selectedTask.title}</h1>
+        </header>
+
+        <TaskDetail
+          projectId={projectId}
+          task={selectedTask}
+          canWrite={canWrite}
+          viewerId={session.user.id}
+          viewerRole={role}
+          members={members.map((m) => ({ id: m.id, name: m.name }))}
+          milestones={projectMilestones.map((m) => ({ id: m.id, name: m.title }))}
+          allTasks={projectTasks.map((t) => ({ id: t.id, title: t.title }))}
+          allLabels={teamLabels.map((l) => ({ id: l.id, name: l.name }))}
+          dependencies={dependencies}
+        />
+      </main>
+    );
+  }
 
   const [latestConv] = await db
     .select({ id: conversations.id })
@@ -181,7 +237,6 @@ export default async function ProjectPage({
             members={members}
             milestones={projectMilestones.map((m) => ({ id: m.id, name: m.title }))}
             allTasks={projectTasks.map((t) => ({ id: t.id, title: t.title }))}
-            allLabels={teamLabels.map((l) => ({ id: l.id, name: l.name }))}
             dependencies={dependencies}
             blockedBy={blockedBy}
           />
@@ -198,10 +253,7 @@ export default async function ProjectPage({
               status: m.status,
             }))}
             dependencies={dependencies}
-            members={members.map((m) => ({ id: m.id, name: m.name }))}
-            allLabels={teamLabels.map((l) => ({ id: l.id, name: l.name }))}
             blockedBy={blockedBy}
-            canWrite={canWrite}
             todayMs={todayMs}
           />
         )}

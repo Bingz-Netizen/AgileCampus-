@@ -8,7 +8,7 @@ export type MemberSeed = { id: string; name: string };
 export type LoadTask = {
   id: string;
   title: string;
-  assigneeId: string | null;
+  assigneeIds: string[];
   status: TaskStatus;
   dueDate: string | null;
   priority: TaskPriority;
@@ -22,19 +22,29 @@ export type UrgentTask = {
   priority: TaskPriority;
 };
 
+export type LoadLevel = "normal" | "busy" | "overload";
+
 export type MemberLoad = {
   id: string;
   name: string;
   openCount: number; // 未完成（todo + doing），含子任务
   doneCount: number;
   totalCount: number;
-  overdueCount: number; // 逾期：dueDate < today 且未完成
-  loadPercent: number; // 相对团队最高未完成数归一化，0-100 整数
+  overdueCount: number; // 逾期：未完成且 dueDate < today
+  todayDueCount: number; // 今日截止
+  dueIn3DaysCount: number; // 1–3 天内截止
+  dueIn7DaysCount: number; // 4–7 天内截止
+  dueLaterCount: number; // 7 天以上截止
+  baseScore: number; // 任务数量基础分 = min(未完成数 × 4, 40)
+  deadlinePressure: number; // 截止压力分 = min(加权和, 60)
+  loadScore: number; // 负载评分 = min(100, round(基础分 + 压力分))
+  loadLevel: LoadLevel; // 0–59 normal / 60–79 busy / 80–100 overload
   urgent: UrgentTask[]; // 最紧急 3 条（未完成，按截止时间升序）
   all: UrgentTask[]; // 全部任务（含已完成），按截止时间升序
 };
 
 const PRIORITY_ORDER: Record<TaskPriority, number> = { high: 0, medium: 1, low: 2 };
+const MS_DAY = 86_400_000;
 
 // 截止时间升序（空截止排最后）；同截止按优先级高→低，再按标题。
 function byDueUrgency(a: UrgentTask, b: UrgentTask): number {
@@ -49,6 +59,11 @@ function byDueUrgency(a: UrgentTask, b: UrgentTask): number {
   return a.title.localeCompare(b.title);
 }
 
+// 距今日的整数天数。date-only 串（YYYY-MM-DD）按 UTC 解析，差值不受本地时区影响。
+function daysFromToday(dueDate: string, today: string): number {
+  return Math.round((Date.parse(dueDate) - Date.parse(today)) / MS_DAY);
+}
+
 export function computeMemberLoad(
   members: MemberSeed[],
   tasks: LoadTask[],
@@ -57,15 +72,14 @@ export function computeMemberLoad(
   const byMember = new Map<string, LoadTask[]>();
   for (const m of members) byMember.set(m.id, []);
   for (const t of tasks) {
-    if (!t.assigneeId) continue;
-    const list = byMember.get(t.assigneeId);
-    if (list) list.push(t);
+    // 一任务多负责人：计入每一位负责人的负载桶
+    for (const id of t.assigneeIds) {
+      const list = byMember.get(id);
+      if (list) list.push(t);
+    }
   }
 
   const isOpen = (t: LoadTask) => t.status !== "done";
-  const openCounts = members.map((m) => (byMember.get(m.id) ?? []).filter(isOpen).length);
-  // 分母至少为 1：全员无未完成任务时统一 0%，避免除零
-  const maxOpen = Math.max(1, ...openCounts);
 
   const toUrgent = (t: LoadTask): UrgentTask => ({
     id: t.id,
@@ -79,24 +93,60 @@ export function computeMemberLoad(
     const list = byMember.get(m.id) ?? [];
     const open = list.filter(isOpen);
     const openCount = open.length;
-    const sortedOpen = open.map(toUrgent).sort(byDueUrgency);
+
+    // 截止压力分桶：仅未完成任务；无截止日期的任务只计入数量分，不入压力分
+    let overdueCount = 0;
+    let todayDueCount = 0;
+    let dueIn3DaysCount = 0;
+    let dueIn7DaysCount = 0;
+    let dueLaterCount = 0;
+    for (const t of open) {
+      if (!t.dueDate) continue;
+      const d = daysFromToday(t.dueDate, today);
+      if (d < 0) overdueCount++;
+      else if (d === 0) todayDueCount++;
+      else if (d <= 3) dueIn3DaysCount++;
+      else if (d <= 7) dueIn7DaysCount++;
+      else dueLaterCount++;
+    }
+
+    const baseScore = Math.min(openCount * 4, 40);
+    const deadlinePressure = Math.min(
+      overdueCount * 15 +
+        todayDueCount * 12 +
+        dueIn3DaysCount * 8 +
+        dueIn7DaysCount * 4 +
+        dueLaterCount * 1,
+      60,
+    );
+    const loadScore = Math.min(100, Math.round(baseScore + deadlinePressure));
+    const loadLevel: LoadLevel =
+      loadScore >= 80 ? "overload" : loadScore >= 60 ? "busy" : "normal";
+
     return {
       id: m.id,
       name: m.name,
       openCount,
       doneCount: list.length - openCount,
       totalCount: list.length,
-      overdueCount: open.filter((t) => t.dueDate && t.dueDate < today).length,
-      loadPercent: openCount === 0 ? 0 : Math.round((openCount / maxOpen) * 100),
-      urgent: sortedOpen.slice(0, 3),
+      overdueCount,
+      todayDueCount,
+      dueIn3DaysCount,
+      dueIn7DaysCount,
+      dueLaterCount,
+      baseScore,
+      deadlinePressure,
+      loadScore,
+      loadLevel,
+      urgent: open.map(toUrgent).sort(byDueUrgency).slice(0, 3),
       all: list.map(toUrgent).sort(byDueUrgency),
     };
   });
 
-  // 负载高者在前，便于一眼看出谁任务过多、谁无事可做
+  // 评分高者在前，便于一眼看出谁任务过多、谁无事可做
   return rows.sort(
     (a, b) =>
-      b.loadPercent - a.loadPercent ||
+      b.loadScore - a.loadScore ||
       b.openCount - a.openCount ||
       a.name.localeCompare(b.name),
   );

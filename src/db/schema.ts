@@ -10,6 +10,8 @@ import {
   doublePrecision,
   index,
   jsonb,
+  boolean,
+  integer,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 
@@ -109,9 +111,6 @@ export const tasks = pgTable(
     title: text("title").notNull(),
     description: text("description"),
     completionNote: text("completion_note"),
-    assigneeId: uuid("assignee_id").references(() => users.id, {
-      onDelete: "set null",
-    }),
     createdById: uuid("created_by_id").references(() => users.id, {
       onDelete: "set null",
     }),
@@ -125,7 +124,6 @@ export const tasks = pgTable(
   },
   (t) => [
     index("tasks_project_idx").on(t.projectId),
-    index("tasks_assignee_idx").on(t.assigneeId),
     index("tasks_parent_idx").on(t.parentTaskId),
   ],
 );
@@ -270,6 +268,24 @@ export const taskLabels = pgTable(
   ],
 );
 
+// 任务负责人（多对多）：一任务可指派多人，删除任务/用户时随 cascade 清除。
+// 替代原先 tasks.assignee_id 单列——见 docs/superpowers 里「多负责人」迁移口径。
+export const taskAssignees = pgTable(
+  "task_assignees",
+  {
+    taskId: uuid("task_id")
+      .notNull()
+      .references(() => tasks.id, { onDelete: "cascade" }),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+  },
+  (t) => [
+    primaryKey({ columns: [t.taskId, t.userId] }),
+    index("task_assignees_user_idx").on(t.userId),
+  ],
+);
+
 // ---- 协作留痕：任务评论 + 活动流 + 站内通知（二期）----
 
 // 评论的归档标记：重要讨论可标「决策 / 问题 / 交付」，自动进项目档案
@@ -280,11 +296,21 @@ export const taskCommentKindEnum = pgEnum("task_comment_kind", [
 ]);
 export type TaskCommentKind = (typeof taskCommentKindEnum.enumValues)[number];
 
-// 活动类型：时间线只合并「状态变更 + 依赖变更」（评论单独成表）
+// 重要评论类型：决策 / 问题 / 交付 / 参考。仅 admin/teacher 可标，其中决策/交付自动进项目档案。
+export const commentImportanceTypeEnum = pgEnum("comment_importance_type", [
+  "decision",
+  "issue",
+  "delivery",
+  "reference",
+]);
+export type CommentImportanceType = (typeof commentImportanceTypeEnum.enumValues)[number];
+
+// 活动类型：时间线只合并「状态变更 + 依赖变更 + 评论删除」（评论单独成表）
 export const taskActivityTypeEnum = pgEnum("task_activity_type", [
   "status_changed",
   "dependency_added",
   "dependency_removed",
+  "comment_deleted",
 ]);
 export type TaskActivityType = (typeof taskActivityTypeEnum.enumValues)[number];
 
@@ -320,13 +346,46 @@ export const taskComments = pgTable(
       .$type<CommentAttachment[]>()
       .notNull()
       .$defaultFn(() => []),
-    kind: taskCommentKindEnum("kind"), // 归档标记，空＝普通评论
+    kind: taskCommentKindEnum("kind"), // 归档标记（旧字段保留兼容），空＝普通评论
+    // 重要评论标记：仅 admin/teacher 可改；decision/delivery 自动进项目档案
+    isImportant: boolean("is_important").notNull().default(false),
+    importanceType: commentImportanceTypeEnum("importance_type"),
+    importantBy: uuid("important_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    importantAt: timestamp("important_at"),
+    // 编辑留痕：仅作者可编辑，每次编辑 +1 并记时间，旧文入 comment_edits 历史表
+    editedAt: timestamp("edited_at"),
+    editCount: integer("edit_count").notNull().default(0),
+    // 软删除：不物理删除，时间线显示「该评论已删除」，档案保留删除记录
+    deletedAt: timestamp("deleted_at"),
+    deletedBy: uuid("deleted_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
     createdAt: timestamp("created_at").notNull().defaultNow(),
   },
   (t) => [
     index("task_comments_task_idx").on(t.taskId),
     index("task_comments_parent_idx").on(t.parentId),
   ],
+);
+
+// 评论编辑历史：每次编辑留一条「旧文 → 新文」，供「已编辑」悬浮/历史查看
+export const commentEdits = pgTable(
+  "comment_edits",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    commentId: uuid("comment_id")
+      .notNull()
+      .references(() => taskComments.id, { onDelete: "cascade" }),
+    editorId: uuid("editor_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    oldContent: text("old_content").notNull(),
+    newContent: text("new_content").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("comment_edits_comment_idx").on(t.commentId)],
 );
 
 export const taskActivities = pgTable(

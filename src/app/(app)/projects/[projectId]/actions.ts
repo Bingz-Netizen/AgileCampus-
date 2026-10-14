@@ -22,7 +22,6 @@ const createTaskSchema = z.object({
   projectId: z.uuid(),
   title: z.string().trim().min(1, "请填写任务标题"),
   description: z.string().trim().optional(),
-  assigneeId: z.uuid().optional(),
   startDate: z.iso.date("日期格式不正确").optional(),
   dueDate: z.iso.date("日期格式不正确").optional(),
   milestoneId: z.uuid().optional(),
@@ -39,7 +38,6 @@ export async function createTaskAction(
   const raw = Object.fromEntries(formData);
   const parsed = createTaskSchema.safeParse({
     ...raw,
-    assigneeId: raw.assigneeId || undefined,
     startDate: raw.startDate || undefined,
     dueDate: raw.dueDate || undefined,
     milestoneId: raw.milestoneId || undefined,
@@ -47,9 +45,14 @@ export async function createTaskAction(
   });
   if (!parsed.success) return { error: parsed.error.issues[0].message };
 
+  const assigneeIds = formData
+    .getAll("assigneeIds")
+    .map(String)
+    .filter((s) => /^[0-9a-f-]{36}$/i.test(s));
+
   const { projectId, ...input } = parsed.data;
   try {
-    await createTask(session.user.id, projectId, input);
+    await createTask(session.user.id, projectId, { ...input, assigneeIds });
   } catch (e) {
     if (e instanceof ForbiddenError) return { error: "没有权限创建任务" };
     if (e instanceof AppError) return { error: e.message };
@@ -97,7 +100,7 @@ export async function createMilestoneAction(
 //（指派人须属团队、里程碑须属项目），故此处只做形状校验。
 const movePatchSchema = z.object({
   status: z.enum(["todo", "doing", "done"]).optional(),
-  assigneeId: z.uuid().nullable().optional(),
+  assigneeIds: z.array(z.uuid()).optional(),
   priority: z.enum(["low", "medium", "high"]).optional(),
   milestoneId: z.uuid().nullable().optional(),
 });
@@ -136,7 +139,6 @@ const updateTaskSchema = z.object({
   projectId: z.uuid(),
   title: z.string().trim().min(1, "标题不可为空"),
   description: z.string().trim().optional(),
-  assigneeId: z.uuid().optional(),
   milestoneId: z.uuid().optional(),
   startDate: z.iso.date("日期格式不正确").optional(),
   dueDate: z.iso.date("日期格式不正确").optional(),
@@ -154,7 +156,6 @@ export async function updateTaskAction(
   const raw = Object.fromEntries(formData);
   const parsed = updateTaskSchema.safeParse({
     ...raw,
-    assigneeId: raw.assigneeId || undefined,
     milestoneId: raw.milestoneId || undefined,
     startDate: raw.startDate || undefined,
     dueDate: raw.dueDate || undefined,
@@ -166,11 +167,15 @@ export async function updateTaskAction(
     .getAll("labelIds")
     .map(String)
     .filter((s) => /^[0-9a-f-]{36}$/i.test(s));
+  const assigneeIds = formData
+    .getAll("assigneeIds")
+    .map(String)
+    .filter((s) => /^[0-9a-f-]{36}$/i.test(s));
   try {
     await updateTask(session.user.id, taskId, {
       title: patch.title,
       description: patch.description ?? null,
-      assigneeId: patch.assigneeId ?? null,
+      assigneeIds,
       milestoneId: patch.milestoneId ?? null,
       startDate: patch.startDate ?? null,
       dueDate: patch.dueDate ?? null,

@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
-import { EditModal } from "./task-card";
+import { useRouter, useSearchParams } from "next/navigation";
 import { EmptyState } from "./empty-state";
+import { withTask } from "./view-nav";
 
 const DAY = 86_400_000;
 const ROW_H = 36;
@@ -26,8 +26,7 @@ type GanttTask = {
   priority: string;
   startDate: string | null;
   dueDate: string | null;
-  assigneeId: string | null;
-  assigneeName: string | null;
+  assigneeNames: string | null;
   milestoneId: string | null;
   parentTaskId: string | null;
   labels: { id: string; name: string; color: string }[];
@@ -127,30 +126,42 @@ function initials(name: string | null): string {
   return s.length > 2 ? s.slice(0, 2) : s;
 }
 
+// 左栏「距今日最近」排序依据：进行中=0，其余取与最近日期的绝对差；无日期=无穷大沉底
+function proximityToToday(row: Row, todayMs: number): number {
+  if (row.kind === "milestone") {
+    const d = parseDay(row.milestone.targetDate);
+    return d === null ? Number.POSITIVE_INFINITY : Math.abs(d - todayMs);
+  }
+  const ds: number[] = [];
+  const s = parseDay(row.task.startDate);
+  const d = parseDay(row.task.dueDate);
+  if (s !== null) ds.push(s);
+  if (d !== null) ds.push(d);
+  if (ds.length === 0) return Number.POSITIVE_INFINITY;
+  const lo = Math.min(...ds);
+  const hi = Math.max(...ds);
+  if (lo <= todayMs && todayMs <= hi) return 0;
+  return Math.min(...ds.map((v) => Math.abs(v - todayMs)));
+}
+
 export function GanttView({
   projectId,
   tasks,
   milestones,
   dependencies,
-  members,
-  allLabels,
   blockedBy,
-  canWrite,
   todayMs,
 }: {
   projectId: string;
   tasks: GanttTask[];
   milestones: GanttMilestone[];
   dependencies: { predecessorId: string; successorId: string }[];
-  members: { id: string; name: string }[];
-  allLabels: { id: string; name: string }[];
   blockedBy: Record<string, string[]>;
-  canWrite: boolean;
   todayMs: number;
 }) {
   const [zoom, setZoom] = useState<Zoom>("day");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const router = useRouter();
   const searchParams = useSearchParams();
   const focusParam = searchParams.get("focus");
   const rowRefs = useRef(new Map<string, HTMLElement>());
@@ -186,8 +197,6 @@ export function GanttView({
     scheduled.push({ task: t, start, end });
   }
 
-  const editingTask = editingId ? tasks.find((t) => t.id === editingId) ?? null : null;
-
   if (tasks.length === 0) {
     return (
       <EmptyState title="没有任务" hint="新建任务并填上起始/截止日，即可在此排成时间线。" />
@@ -215,7 +224,8 @@ export function GanttView({
           onSelect={setSelectedId}
           onOpenTask={(t) => {
             setSelectedId(t.id);
-            if (canWrite) setEditingId(t.id);
+            const qs = withTask(new URLSearchParams(searchParams.toString()), t.id);
+            router.replace(`/projects/${projectId}?${qs}`);
           }}
         />
       )}
@@ -233,19 +243,6 @@ export function GanttView({
             ))}
           </ul>
         </section>
-      )}
-
-      {editingTask && (
-        <EditModal
-          task={editingTask}
-          projectId={projectId}
-          members={members}
-          milestones={milestones.map((m) => ({ id: m.id, name: m.title }))}
-          allTasks={tasks.map((t) => ({ id: t.id, title: t.title }))}
-          allLabels={allLabels}
-          dependencies={dependencies}
-          onClose={() => setEditingId(null)}
-        />
       )}
     </div>
   );
@@ -276,6 +273,7 @@ function Timeline({
   onSelect: (id: string) => void;
   onOpenTask: (task: GanttTask) => void;
 }) {
+  const [maximized, setMaximized] = useState(false);
   // 时间范围：涵盖全部任务条 + 里程碑 + 今日，前后各留 3 天
   let minMs = todayMs;
   let maxMs = todayMs + DAY;
@@ -335,6 +333,12 @@ function Timeline({
   for (const m of milestones) {
     if (m.targetDate) rows.push({ kind: "milestone", id: m.id, milestone: m });
   }
+  // 左栏按「距今日最近」排序（进行中/最近日期在前），时间轴仍保持任务树顺序
+  const leftRows = [...rows].sort((a, b) => {
+    const pa = proximityToToday(a, todayMs);
+    const pb = proximityToToday(b, todayMs);
+    return pa === pb ? 0 : pa - pb;
+  });
 
   // 依赖箭头：前置条右缘 → 后置条左缘（仅当两任务都在轴上时画）
   const arrows: { x1: number; y1: number; x2: number; y2: number }[] = [];
@@ -385,54 +389,58 @@ function Timeline({
       </div>
 
       <div className="flex">
-        {/* 左：任务树 */}
-        <div className="w-64 shrink-0 border-r border-line">
-          <div className="flex h-10 items-center border-b border-line px-3 text-xs font-semibold text-ink-soft">
-            任务
+        {/* 左：任务树（仅显距今日最近的 5 条，其余上下滚动；放大模式隐藏） */}
+        {!maximized && (
+          <div className="w-64 shrink-0 border-r border-line">
+            <div className="flex h-10 items-center border-b border-line px-3 text-xs font-semibold text-ink-soft">
+              任务
+            </div>
+            <div className="overflow-y-auto" style={{ maxHeight: 5 * ROW_H }}>
+              <ul>
+                {leftRows.map((row) => {
+                  const selected = selectedId === row.id;
+                  if (row.kind === "milestone") {
+                    const done = row.milestone.status === "done";
+                    return (
+                      <li
+                        key={row.id}
+                        className={`flex h-9 items-center gap-1.5 border-b border-line/60 px-3 text-xs transition ${
+                          selected ? "bg-accent-soft" : ""
+                        }`}
+                      >
+                        <span className={done ? "text-done" : "text-accent"}>◆</span>
+                        <span className="truncate text-ink-soft">{row.milestone.title}</span>
+                      </li>
+                    );
+                  }
+                  const t = row.task;
+                  const overdue =
+                    t.status !== "done" &&
+                    t.dueDate !== null &&
+                    (parseDay(t.dueDate) ?? 0) < todayMs;
+                  return (
+                    <li key={row.id}>
+                      <button
+                        type="button"
+                        onClick={() => onSelect(t.id)}
+                        className={`flex h-9 w-full items-center gap-1.5 border-b border-line/60 px-3 text-left text-xs transition ${
+                          selected ? "bg-accent-soft" : "hover:bg-sunken"
+                        }`}
+                        style={{ paddingLeft: `${12 + row.depth * 16}px` }}
+                        title={t.title}
+                      >
+                        <span className="min-w-0 flex-1 truncate text-ink">{t.title}</span>
+                        {overdue && (
+                          <span className="shrink-0 text-[10px] font-medium text-high">逾期</span>
+                        )}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
           </div>
-          <ul>
-            {rows.map((row) => {
-              const selected = selectedId === row.id;
-              if (row.kind === "milestone") {
-                const done = row.milestone.status === "done";
-                return (
-                  <li
-                    key={row.id}
-                    className={`flex h-9 items-center gap-1.5 border-b border-line/60 px-3 text-xs transition ${
-                      selected ? "bg-accent-soft" : ""
-                    }`}
-                  >
-                    <span className={done ? "text-done" : "text-accent"}>◆</span>
-                    <span className="truncate text-ink-soft">{row.milestone.title}</span>
-                  </li>
-                );
-              }
-              const t = row.task;
-              const overdue =
-                t.status !== "done" &&
-                t.dueDate !== null &&
-                (parseDay(t.dueDate) ?? 0) < todayMs;
-              return (
-                <li key={row.id}>
-                  <button
-                    type="button"
-                    onClick={() => onSelect(t.id)}
-                    className={`flex h-9 w-full items-center gap-1.5 border-b border-line/60 px-3 text-left text-xs transition ${
-                      selected ? "bg-accent-soft" : "hover:bg-sunken"
-                    }`}
-                    style={{ paddingLeft: `${12 + row.depth * 16}px` }}
-                    title={t.title}
-                  >
-                    <span className="min-w-0 flex-1 truncate text-ink">{t.title}</span>
-                    {overdue && (
-                      <span className="shrink-0 text-[10px] font-medium text-high">逾期</span>
-                    )}
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
+        )}
 
         {/* 右：时间轴（横向滚动） */}
         <div className="flex-1 overflow-x-auto">
@@ -559,6 +567,16 @@ function Timeline({
           </div>
         </div>
       </div>
+
+      {/* 右下角放大键：隐藏左栏、全宽呈现时间轴 */}
+      <button
+        type="button"
+        onClick={() => setMaximized((v) => !v)}
+        aria-pressed={maximized}
+        className="fixed bottom-4 right-4 z-40 flex items-center gap-1 rounded-field border border-line bg-surface px-3 py-1.5 text-xs font-medium text-ink shadow-pop transition hover:border-primary hover:text-primary"
+      >
+        {maximized ? "还原" : "放大"}
+      </button>
     </div>
   );
 }
@@ -596,7 +614,7 @@ function TaskBar({
   const tip = [
     task.title,
     `${STATUS_LABEL[task.status] ?? task.status} · ${rangeLabel}`,
-    task.assigneeName ?? "未分配",
+    task.assigneeNames ?? "未分配",
     overdue ? "逾期" : null,
     blocked ? `等待前置任务：${blockedBy[task.id].join("、")}` : null,
   ]
@@ -624,9 +642,9 @@ function TaskBar({
           ...(blocked ? BLOCKED_STYLE : {}),
         }}
       >
-        {widthPx >= 24 && task.assigneeName && (
+        {widthPx >= 24 && task.assigneeNames && (
           <span className="grid h-4 w-4 shrink-0 place-items-center rounded-full bg-white/25 text-[9px] font-semibold leading-none">
-            {initials(task.assigneeName)}
+            {initials(task.assigneeNames.split("、")[0])}
           </span>
         )}
         {widthPx >= 56 && <span className="truncate">{task.title}</span>}

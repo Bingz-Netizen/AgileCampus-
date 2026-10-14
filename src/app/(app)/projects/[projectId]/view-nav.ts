@@ -32,3 +32,19 @@ export function withView(
   else p.delete("focus");
   return p.toString();
 }
+
+// 打开任务详情内嵌视图：保留既有 view/筛选，写入 task，清除跨视图高亮 focus。
+export function withTask(params: URLSearchParams, taskId: string): string {
+  const p = new URLSearchParams(params.toString());
+  p.set("task", taskId);
+  p.delete("focus");
+  return p.toString();
+}
+
+// 关闭任务详情返回项目：仅移除 task 与 focus，保留 view/筛选。
+export function withoutTask(params: URLSearchParams): string {
+  const p = new URLSearchParams(params.toString());
+  p.delete("task");
+  p.delete("focus");
+  return p.toString();
+}

@@ -7,7 +7,7 @@ const schema = z.object({
   projectId: z.uuid(),
   title: z.string().min(1),
   description: z.string().optional(),
-  assigneeId: z.uuid().optional(),
+  assigneeIds: z.array(z.uuid()).optional(),
   startDate: z.string().optional(),
   dueDate: z.string().optional(),
   milestoneId: z.uuid().optional(),

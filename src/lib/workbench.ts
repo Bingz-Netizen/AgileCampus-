@@ -3,6 +3,7 @@ import { db } from "@/db";
 import {
   milestones,
   projects,
+  taskAssignees,
   tasks,
   teamMembers,
   teams,
@@ -128,7 +129,7 @@ export async function getWorkbenchOverview(
 
   const projectIds = projectRows.map((p) => p.id);
 
-  // 任务聚合：一条 SQL 同时产出三态计数、逾期数与「我的」口径（count filter 括号包裹保证 ::int 作用于整体）
+  // 任务聚合：三态计数 + 逾期数（全量口径）
   const taskAggRows = await db
     .select({
       projectId: tasks.projectId,
@@ -136,14 +137,25 @@ export async function getWorkbenchOverview(
       doing: sql<number>`(count(*) filter (where ${tasks.status} = 'doing'))::int`,
       done: sql<number>`(count(*) filter (where ${tasks.status} = 'done'))::int`,
       overdue: sql<number>`(count(*) filter (where ${tasks.status} <> 'done' and ${tasks.dueDate} < ${today}))::int`,
-      myTotal: sql<number>`(count(*) filter (where ${tasks.assigneeId} = ${actorId}))::int`,
-      myDone: sql<number>`(count(*) filter (where ${tasks.assigneeId} = ${actorId} and ${tasks.status} = 'done'))::int`,
-      myOverdue: sql<number>`(count(*) filter (where ${tasks.assigneeId} = ${actorId} and ${tasks.status} <> 'done' and ${tasks.dueDate} < ${today}))::int`,
     })
     .from(tasks)
     .where(inArray(tasks.projectId, projectIds))
     .groupBy(tasks.projectId);
   const taskAgg = new Map(taskAggRows.map((r) => [r.projectId, r]));
+
+  // 「我的」口径单独走连接表：一任务多负责人，凡我参与即计入（task_assignees 主键去重保证每任务最多一次）
+  const myAggRows = await db
+    .select({
+      projectId: tasks.projectId,
+      myTotal: sql<number>`count(*)::int`,
+      myDone: sql<number>`(count(*) filter (where ${tasks.status} = 'done'))::int`,
+      myOverdue: sql<number>`(count(*) filter (where ${tasks.status} <> 'done' and ${tasks.dueDate} < ${today}))::int`,
+    })
+    .from(taskAssignees)
+    .innerJoin(tasks, eq(taskAssignees.taskId, tasks.id))
+    .where(and(eq(taskAssignees.userId, actorId), inArray(tasks.projectId, projectIds)))
+    .groupBy(tasks.projectId);
+  const myAgg = new Map(myAggRows.map((r) => [r.projectId, r]));
 
   // 里程碑聚合：未关闭数、逾期数（open 且 targetDate < today）、7 天内到期数
   const in7 = new Date(Date.parse(`${today}T00:00:00Z`) + 7 * 86_400_000)
@@ -168,6 +180,7 @@ export async function getWorkbenchOverview(
   for (const p of projectRows) {
     const t = taskAgg.get(p.id);
     const m = msAgg.get(p.id);
+    const my = myAgg.get(p.id);
     const todo = t?.todo ?? 0;
     const doing = t?.doing ?? 0;
     const done = t?.done ?? 0;
@@ -189,9 +202,9 @@ export async function getWorkbenchOverview(
       overdueTaskCount,
       milestoneOpenCount,
       overdueMilestoneCount,
-      myTotal: t?.myTotal ?? 0,
-      myDone: t?.myDone ?? 0,
-      myOverdue: t?.myOverdue ?? 0,
+      myTotal: my?.myTotal ?? 0,
+      myDone: my?.myDone ?? 0,
+      myOverdue: my?.myOverdue ?? 0,
       risk: computeRisk(
         overdueTaskCount,
         overdueMilestoneCount,

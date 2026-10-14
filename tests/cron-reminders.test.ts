@@ -39,7 +39,7 @@ describe("POST /api/cron/reminders", () => {
     const project = await createProject(owner.id, team.id, { name: "赤壁" });
     await bindFeishu(owner.id, { openId: "ou_owner", name: "主帅" });
     const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
-    await createTask(owner.id, project.id, { title: "临期活", assigneeId: owner.id, dueDate: tomorrow.toISOString().slice(0, 10) });
+    await createTask(owner.id, project.id, { title: "临期活", assigneeIds: [owner.id], dueDate: tomorrow.toISOString().slice(0, 10) });
     // 建任务时会触发一次「新任务指派」通知（fire-and-forget），与本测试要验证的
     // cron 扫描通知无关，等其落定后清空计数，避免污染下面的断言。
     await vi.waitFor(() => expect(sendMock).toHaveBeenCalled());

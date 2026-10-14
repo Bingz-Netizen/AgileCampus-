@@ -15,7 +15,7 @@ const L = "44444444-4444-4444-4444-444444444444";
 
 function task(over: Partial<FilterableTask> = {}): FilterableTask {
   return {
-    assigneeId: null,
+    assigneeIds: [],
     priority: "medium",
     milestoneId: null,
     dueDate: null,
@@ -89,7 +89,7 @@ describe("applyFilters", () => {
   });
 
   it("按指派人筛选，none 命中未指派", () => {
-    const list = [task({ assigneeId: A }), task({ assigneeId: null })];
+    const list = [task({ assigneeIds: [A] }), task({ assigneeIds: [] })];
     expect(applyFilters(list, { ...EMPTY_FILTERS, assignee: [A] }, today)).toHaveLength(1);
     expect(applyFilters(list, { ...EMPTY_FILTERS, assignee: ["none"] }, today)).toHaveLength(1);
   });
@@ -116,9 +116,9 @@ describe("applyFilters", () => {
 
   it("多维筛选取交集", () => {
     const list = [
-      task({ assigneeId: A, priority: "high" }),
-      task({ assigneeId: A, priority: "low" }),
-      task({ assigneeId: B, priority: "high" }),
+      task({ assigneeIds: [A], priority: "high" }),
+      task({ assigneeIds: [A], priority: "low" }),
+      task({ assigneeIds: [B], priority: "high" }),
     ];
     const f = { ...EMPTY_FILTERS, assignee: [A], priority: ["high"] };
     expect(applyFilters(list, f, today)).toHaveLength(1);
@@ -142,12 +142,12 @@ describe("deriveColumns", () => {
     expect(cols[1].matches(task({ status: "todo" }))).toBe(false);
   });
 
-  it("按指派人分组：每成员一列 + 未指派列，patch 改 assigneeId", () => {
+  it("按指派人分组：每成员一列 + 未指派列，patch 改 assigneeIds", () => {
     const cols = deriveColumns("assignee", ctx);
     expect(cols.map((c) => c.key)).toEqual([A, B, "none"]);
-    expect(cols[0].patch).toEqual({ assigneeId: A });
-    expect(cols[2].patch).toEqual({ assigneeId: null });
-    expect(cols[2].matches(task({ assigneeId: null }))).toBe(true);
+    expect(cols[0].patch).toEqual({ assigneeIds: [A] });
+    expect(cols[2].patch).toEqual({ assigneeIds: [] });
+    expect(cols[2].matches(task({ assigneeIds: [] }))).toBe(true);
   });
 
   it("按优先级分组：高中低三列，patch 改 priority", () => {

@@ -3,9 +3,7 @@ import { z } from "zod";
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { getProjectForUser, listProjectMilestones } from "@/lib/project";
-import { listTeamMembers } from "@/lib/team";
 import { listProjectTasks, listProjectDependencies } from "@/lib/task";
-import { listTeamLabels } from "@/lib/label";
 import { GanttView } from "../gantt-view";
 
 export default async function TimelinePage({
@@ -21,12 +19,10 @@ export default async function TimelinePage({
   const access = await getProjectForUser(session.user.id, projectId);
   if (!access) notFound();
 
-  const [tasks, milestones, members, dependencies, teamLabels] = await Promise.all([
+  const [tasks, milestones, dependencies] = await Promise.all([
     listProjectTasks(session.user.id, projectId),
     listProjectMilestones(session.user.id, projectId),
-    listTeamMembers(access.project.teamId),
     listProjectDependencies(session.user.id, projectId),
-    listTeamLabels(session.user.id, access.project.teamId),
   ]);
 
   // 完成-开始依赖阻塞：后置任务 id → 未完成前置任务标题列表（甘特斜纹用）
@@ -36,8 +32,6 @@ export default async function TimelinePage({
     const pred = taskById.get(d.predecessorId);
     if (pred && pred.status !== "done") (blockedBy[d.successorId] ??= []).push(pred.title);
   }
-
-  const canWrite = access.role === "admin" || access.role === "student";
 
   const todayStart = new Date();
   todayStart.setHours(0, 0, 0, 0);
@@ -68,8 +62,7 @@ export default async function TimelinePage({
           priority: t.priority,
           startDate: t.startDate,
           dueDate: t.dueDate,
-          assigneeId: t.assigneeId,
-          assigneeName: t.assigneeName,
+          assigneeNames: t.assigneeNames,
           milestoneId: t.milestoneId,
           parentTaskId: t.parentTaskId,
           labels: t.labels,
@@ -81,10 +74,7 @@ export default async function TimelinePage({
           status: m.status,
         }))}
         dependencies={dependencies}
-        members={members.map((m) => ({ id: m.id, name: m.name }))}
-        allLabels={teamLabels.map((l) => ({ id: l.id, name: l.name }))}
         blockedBy={blockedBy}
-        canWrite={canWrite}
         todayMs={todayMs}
       />
     </main>

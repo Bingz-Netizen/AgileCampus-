@@ -1,7 +1,7 @@
 // 飞书 interactive 卡片模板。卡片 JSON schema 以飞书官方文档核验字段名。
 const SITE = () => process.env.AGILECAMPUS_URL ?? "http://localhost:3000";
 
-// 深链：飞书内点击 → JSSDK 免登 → 项目页 ?task= 自动打开任务弹窗
+// 深链：飞书内点击 → JSSDK 免登 → 项目页任务详情内嵌视图（?task=）
 function taskUrl(projectId: string, taskId: string): string {
   return `${SITE()}/projects/${projectId}?task=${taskId}`;
 }

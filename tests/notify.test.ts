@@ -25,7 +25,7 @@ describe("notifyTaskAssigned", () => {
   it("负责人已绑飞书 → 发私信", async () => {
     const { owner, project } = await base();
     await bindFeishu(owner.id, { openId: "ou_owner", name: "主帅" });
-    const task = await createTask(owner.id, project.id, { title: "斥候", assigneeId: owner.id, dueDate: "2026-08-01" });
+    const task = await createTask(owner.id, project.id, { title: "斥候", assigneeIds: [owner.id], dueDate: "2026-08-01" });
 
     await new Promise((r) => setTimeout(r, 50)); // 让 createTask 的游离即时通知先跑完
     sendMock.mockClear();                         // 清掉 createTask 副作用产生的调用
@@ -40,7 +40,7 @@ describe("notifyTaskAssigned", () => {
 
   it("负责人未绑飞书 → 跳过", async () => {
     const { owner, project } = await base();
-    const task = await createTask(owner.id, project.id, { title: "x", assigneeId: owner.id });
+    const task = await createTask(owner.id, project.id, { title: "x", assigneeIds: [owner.id] });
     const { notifyTaskAssigned } = await import("@/lib/notify");
     await notifyTaskAssigned(task);
     expect(sendMock).not.toHaveBeenCalled();
@@ -57,7 +57,7 @@ describe("notifyTaskAssigned", () => {
   it("飞书发送抛错 → 不抛出（fire-and-forget）", async () => {
     const { owner, project } = await base();
     await bindFeishu(owner.id, { openId: "ou_owner", name: "主帅" });
-    const task = await createTask(owner.id, project.id, { title: "x", assigneeId: owner.id });
+    const task = await createTask(owner.id, project.id, { title: "x", assigneeIds: [owner.id] });
     sendMock.mockRejectedValueOnce(new Error("飞书挂了"));
     const { notifyTaskAssigned } = await import("@/lib/notify");
     await expect(notifyTaskAssigned(task)).resolves.toBeUndefined();
@@ -101,10 +101,10 @@ describe("scanAndNotifyDue", () => {
     const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
     const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
 
-    await createTask(owner.id, project.id, { title: "临期活", assigneeId: owner.id, dueDate: iso(tomorrow) });
-    await createTask(owner.id, project.id, { title: "逾期活", assigneeId: owner.id, dueDate: iso(yesterday) });
+    await createTask(owner.id, project.id, { title: "临期活", assigneeIds: [owner.id], dueDate: iso(tomorrow) });
+    await createTask(owner.id, project.id, { title: "逾期活", assigneeIds: [owner.id], dueDate: iso(yesterday) });
     // done 的逾期任务不计
-    const doneTask = await createTask(owner.id, project.id, { title: "已完成", assigneeId: owner.id, dueDate: iso(yesterday) });
+    const doneTask = await createTask(owner.id, project.id, { title: "已完成", assigneeIds: [owner.id], dueDate: iso(yesterday) });
     await db.update(tasks).set({ status: "done" }).where(eq(tasks.id, doneTask.id));
 
     await new Promise((r) => setTimeout(r, 50)); // 让 createTask 的游离即时通知先跑完
@@ -124,7 +124,7 @@ describe("scanAndNotifyDue", () => {
   it("未绑飞书的负责人 → 不发", async () => {
     const { owner, project } = await base();
     const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
-    await createTask(owner.id, project.id, { title: "x", assigneeId: owner.id, dueDate: tomorrow.toISOString().slice(0, 10) });
+    await createTask(owner.id, project.id, { title: "x", assigneeIds: [owner.id], dueDate: tomorrow.toISOString().slice(0, 10) });
     const { scanAndNotifyDue } = await import("@/lib/notify");
     const r = await scanAndNotifyDue();
     expect(sendMock).not.toHaveBeenCalled();

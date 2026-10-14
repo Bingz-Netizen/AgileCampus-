@@ -15,10 +15,14 @@ const PRIORITY_LABEL: Record<string, string> = { high: "高", medium: "中", low
 // 只读任务详情弹窗：teacher 等只读成员可查看任务与参与讨论（无编辑/依赖/删除入口）。
 export function TaskReadModal({
   task,
+  viewerId,
+  viewerRole,
   members,
   onClose,
 }: {
   task: BoardTask;
+  viewerId: string;
+  viewerRole: "admin" | "teacher" | "student";
   members: { id: string; name: string }[];
   onClose: () => void;
 }) {
@@ -61,7 +65,7 @@ export function TaskReadModal({
           <span className="ac-badge bg-sunken text-ink-soft">
             {PRIORITY_LABEL[task.priority] ?? task.priority}
           </span>
-          <span>负责人：{task.assigneeName ?? "未分配"}</span>
+          <span>负责人：{task.assigneeNames ?? "未分配"}</span>
         </div>
         {(task.startDate || task.dueDate) && (
           <p className="mt-1 text-xs text-ink-faint">
@@ -78,7 +82,7 @@ export function TaskReadModal({
         )}
 
         <div className="mt-3">
-          <TaskDiscussion taskId={task.id} members={members} />
+          <TaskDiscussion taskId={task.id} viewerId={viewerId} viewerRole={viewerRole} members={members} />
         </div>
       </div>
     </div>

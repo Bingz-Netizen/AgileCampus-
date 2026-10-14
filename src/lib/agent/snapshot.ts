@@ -39,9 +39,9 @@ export async function buildProjectSnapshot(actorId: string, projectId: string): 
     .filter(Boolean)
     .join("\n");
 
-  // 成员段恒保留：assigneeId 只能取自此处，且无 list_members 读工具可兜底
+  // 成员段恒保留：assigneeIds 只能取自此处，且无 list_members 读工具可兜底
   const memberBlock =
-    "\n\n## 成员（assigneeId 只能取此处的 id）\n" +
+    "\n\n## 成员（assigneeIds 只能取此处的 id）\n" +
     members.map((m) => `- ${m.name}｜${m.role}｜id=${m.id}`).join("\n");
 
   const milestoneBlock =
@@ -62,7 +62,7 @@ export async function buildProjectSnapshot(actorId: string, projectId: string): 
         shownTasks
           .map(
             (t) =>
-              `- [${t.status}] ${t.title}｜${t.assigneeName ?? "未指派"}｜${t.dueDate ?? "无截止"}｜id=${t.id}`,
+              `- [${t.status}] ${t.title}｜${t.assigneeNames ?? "未指派"}｜${t.dueDate ?? "无截止"}｜id=${t.id}`,
           )
           .join("\n") +
         (tasks.length > shownTasks.length

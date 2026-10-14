@@ -9,7 +9,7 @@ import type { WriteToolName } from "./tools";
 const taskDraftSchema = z.object({
   title: z.string().min(1),
   description: z.string().optional(),
-  assigneeId: z.string().optional(),
+  assigneeIds: z.array(z.string()).optional(),
   dueDate: z.string().optional(),
   milestoneId: z.string().optional(),
   priority: z.enum(["low", "medium", "high"]).optional(),
@@ -27,7 +27,7 @@ const decomposeSchema = z.object({ tasks: z.array(taskDraftSchema).min(1) });
 const patchSchema = z.object({
   title: z.string().optional(),
   status: z.enum(["todo", "doing", "done"]).optional(),
-  assigneeId: z.string().optional(),
+  assigneeIds: z.array(z.string()).optional(),
   dueDate: z.string().optional(),
   milestoneId: z.string().optional(),
   priority: z.enum(["low", "medium", "high"]).optional(),
@@ -77,7 +77,7 @@ export async function commitDraft(
         return out;
       });
       // 事务提交后补发通知（tx 路径 createTask 不 fire，由此处统一发）
-      for (const t of created) if (t.assigneeId) void notifyTaskAssigned(t);
+      for (const t of created) if (t.assigneeIds.length > 0) void notifyTaskAssigned(t);
       return { committed: d.tasks.length, conflicts: [] };
     }
     case "update_tasks": {

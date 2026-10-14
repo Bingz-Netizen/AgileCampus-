@@ -32,13 +32,28 @@ describe("createTask", () => {
     const { student, project } = await scene();
     const t = await createTask(student.id, project.id, {
       title: "撰写调研问卷",
-      assigneeId: student.id,
+      assigneeIds: [student.id],
       dueDate: "2026-10-01",
     });
     expect(t.status).toBe("todo");
     expect(t.priority).toBe("medium");
-    expect(t.assigneeId).toBe(student.id);
+    expect(t.assigneeIds).toEqual([student.id]);
     expect(t.sortOrder).toBeGreaterThan(0);
+  });
+
+  it("支持多负责人，回读 assignees/assigneeNames", async () => {
+    const { student, teacher, project } = await scene();
+    const t = await createTask(student.id, project.id, {
+      title: "多人任务",
+      assigneeIds: [student.id, teacher.id],
+    });
+    expect(t.assigneeIds.sort()).toEqual([student.id, teacher.id].sort());
+
+    const [row] = await listProjectTasks(student.id, project.id);
+    expect(row.assignees).toHaveLength(2);
+    expect(row.assigneeIds.sort()).toEqual([student.id, teacher.id].sort());
+    expect(row.assigneeNames).toContain("student");
+    expect(row.assigneeNames).toContain("teacher");
   });
 
   it("teacher 建任务被拒（只读角色）", async () => {
@@ -58,7 +73,7 @@ describe("createTask", () => {
   it("负责人必须是团队成员", async () => {
     const { student, outsider, project } = await scene();
     await expect(
-      createTask(student.id, project.id, { title: "任务", assigneeId: outsider.id }),
+      createTask(student.id, project.id, { title: "任务", assigneeIds: [outsider.id] }),
     ).rejects.toThrow("负责人不是团队成员");
   });
 
@@ -80,10 +95,10 @@ describe("updateTask", () => {
     const t = await createTask(student.id, project.id, { title: "任务" });
     const updated = await updateTask(student.id, t.id, {
       status: "doing",
-      assigneeId: owner.id,
+      assigneeIds: [owner.id],
     });
     expect(updated.status).toBe("doing");
-    expect(updated.assigneeId).toBe(owner.id);
+    expect(updated.assigneeIds).toEqual([owner.id]);
     expect(updated.updatedAt.getTime()).toBeGreaterThanOrEqual(t.updatedAt.getTime());
   });
 
@@ -121,13 +136,13 @@ describe("deleteTask / listProjectTasks", () => {
     const { student, project } = await scene();
     const t1 = await createTask(student.id, project.id, {
       title: "甲",
-      assigneeId: student.id,
+      assigneeIds: [student.id],
     });
     await createTask(student.id, project.id, { title: "乙" });
 
     let list = await listProjectTasks(student.id, project.id);
     expect(list).toHaveLength(2);
-    expect(list.find((x) => x.id === t1.id)?.assigneeName).toBe("student");
+    expect(list.find((x) => x.id === t1.id)?.assigneeNames).toBe("student");
 
     await deleteTask(student.id, t1.id);
     list = await listProjectTasks(student.id, project.id);

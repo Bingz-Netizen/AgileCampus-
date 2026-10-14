@@ -146,7 +146,7 @@ function DraftCard({
 
   if (draft.tool === "decompose_tasks") {
     const d = data as {
-      tasks: { title: string; assigneeId?: string; priority?: string; dueDate?: string; milestoneId?: string }[];
+      tasks: { title: string; assigneeIds?: string[]; priority?: string; dueDate?: string; milestoneId?: string }[];
     };
     const setTask = (idx: number, patch: object) =>
       setData({ ...d, tasks: d.tasks.map((t, i) => (i === idx ? { ...t, ...patch } : t)) });
@@ -155,8 +155,15 @@ function DraftCard({
         {d.tasks.map((t, idx) => (
           <div key={idx} className="flex flex-wrap gap-1 border-b border-line pb-1">
             <input value={t.title} onChange={(e) => setTask(idx, { title: e.target.value })} className="ac-field flex-1 text-xs" />
-            <select value={t.assigneeId ?? ""} onChange={(e) => setTask(idx, { assigneeId: e.target.value || undefined })} className="ac-field w-auto text-xs">
-              <option value="">未分配</option>
+            <select
+              multiple
+              value={t.assigneeIds ?? []}
+              onChange={(e) =>
+                setTask(idx, { assigneeIds: Array.from(e.target.selectedOptions).map((o) => o.value) })
+              }
+              className="ac-field w-auto text-xs"
+              size={Math.min(3, Math.max(1, members.length))}
+            >
               {members.map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.name}

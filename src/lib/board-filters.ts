@@ -12,7 +12,7 @@ export type BoardFilters = {
 };
 
 export type FilterableTask = {
-  assigneeId: string | null;
+  assigneeIds: string[];
   priority: string;
   milestoneId: string | null;
   dueDate: string | null;
@@ -74,7 +74,12 @@ export function applyFilters<T extends FilterableTask>(
   today: string,
 ): T[] {
   return list.filter((t) => {
-    if (f.assignee.length && !f.assignee.includes(t.assigneeId ?? "none")) return false;
+    // 多负责人：任务命中任一被筛负责人即保留；筛「未指派」时仅无负责人者命中
+    if (f.assignee.length) {
+      const wantsNone = f.assignee.includes("none");
+      const hits = t.assigneeIds.some((id) => f.assignee.includes(id));
+      if (!hits && !(wantsNone && t.assigneeIds.length === 0)) return false;
+    }
     if (f.priority.length && !f.priority.includes(t.priority)) return false;
     if (f.milestone.length && !f.milestone.includes(t.milestoneId ?? "none")) return false;
     if (f.label.length && !t.labels.some((l) => f.label.includes(l.id))) return false;

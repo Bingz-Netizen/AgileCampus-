@@ -30,7 +30,7 @@ describe("即时通知接入", () => {
 
   it("建任务带负责人 → 发被指派通知", async () => {
     const { owner, project } = await base();
-    await createTask(owner.id, project.id, { title: "斥候", assigneeId: owner.id });
+    await createTask(owner.id, project.id, { title: "斥候", assigneeIds: [owner.id] });
     await waitForCall();
     expect(sendMock).toHaveBeenCalled();
     expect(sendMock.mock.calls[0][0]).toBe("ou_owner");
@@ -44,7 +44,7 @@ describe("即时通知接入", () => {
     const task = await createTask(owner.id, project.id, { title: "布阵" });
     sendMock.mockClear();
 
-    await updateTask(owner.id, task.id, { assigneeId: other.id });
+    await updateTask(owner.id, task.id, { assigneeIds: [other.id] });
     await waitForCall();
     expect(sendMock.mock.calls.some((c) => c[0] === "ou_other")).toBe(true);
   });

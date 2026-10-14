@@ -19,6 +19,10 @@ import {
   markAllNotificationsRead,
   markCommentKind,
   listMyMentionNotifications,
+  markCommentImportant,
+  editComment,
+  deleteComment,
+  listCommentHistory,
 } from "@/lib/comment";
 import { resetDb } from "./helpers";
 
@@ -109,6 +113,99 @@ describe("任务评论", () => {
   });
 });
 
+describe("重要评论标记 / 编辑 / 删除权限", () => {
+  beforeEach(resetDb);
+
+  it("student 标记重要被 403 拒绝（含自己的评论）", async () => {
+    const { student, project } = await scene();
+    const t = await createTask(student.id, project.id, { title: "甲" });
+    const c = await createComment(student.id, t.id, { content: "我的结论" });
+    await expect(
+      markCommentImportant(student.id, c.id, { important: true, type: "decision" }),
+    ).rejects.toThrow("仅教师或管理员可标记重要评论");
+  });
+
+  it("teacher 可标记任何评论（含他人），决策自动进档案，取消后移除", async () => {
+    const { student, teacher, project } = await scene();
+    const t = await createTask(student.id, project.id, { title: "甲" });
+    const c = await createComment(student.id, t.id, { content: "学生结论" });
+    const marked = await markCommentImportant(teacher.id, c.id, {
+      important: true,
+      type: "decision",
+    });
+    expect(marked.isImportant).toBe(true);
+    expect(marked.importanceType).toBe("decision");
+
+    let archives = await listProjectArchives(teacher.id, project.id);
+    expect(archives.some((a) => a.id === c.id)).toBe(true);
+
+    await markCommentImportant(teacher.id, c.id, { important: false });
+    archives = await listProjectArchives(teacher.id, project.id);
+    expect(archives.some((a) => a.id === c.id)).toBe(false);
+  });
+
+  it("仅决策/交付自动归档，问题/参考不归档", async () => {
+    const { student, teacher, project } = await scene();
+    const t = await createTask(student.id, project.id, { title: "甲" });
+    const c1 = await createComment(student.id, t.id, { content: "交付结论" });
+    const c2 = await createComment(student.id, t.id, { content: "待决问题" });
+    await markCommentImportant(teacher.id, c1.id, { important: true, type: "delivery" });
+    await markCommentImportant(teacher.id, c2.id, { important: true, type: "issue" });
+    const archives = await listProjectArchives(teacher.id, project.id);
+    expect(archives.some((a) => a.id === c1.id)).toBe(true);
+    expect(archives.some((a) => a.id === c2.id)).toBe(false);
+  });
+
+  it("仅作者可编辑，非作者被拒，编辑留痕", async () => {
+    const { student, teacher, project } = await scene();
+    const t = await createTask(student.id, project.id, { title: "甲" });
+    const c = await createComment(student.id, t.id, { content: "原始" });
+    await expect(editComment(teacher.id, c.id, "篡改")).rejects.toThrow(
+      "仅评论作者可编辑自己的评论",
+    );
+
+    const edited = await editComment(student.id, c.id, "改后");
+    expect(edited.content).toBe("改后");
+    expect(edited.editCount).toBe(1);
+    expect(edited.editedAt).not.toBeNull();
+
+    const history = await listCommentHistory(student.id, c.id);
+    expect(history).toHaveLength(1);
+    expect(history[0]).toMatchObject({ oldContent: "原始", newContent: "改后" });
+  });
+
+  it("作者删己、teacher 删任何；student 删他人被拒；软删除留痕", async () => {
+    const { owner, student, teacher, project } = await scene();
+    const t = await createTask(student.id, project.id, { title: "甲" });
+
+    // teacher 删学生评论
+    const c = await createComment(student.id, t.id, { content: "被删" });
+    await deleteComment(teacher.id, c.id);
+    const after = await listTaskComments(student.id, t.id);
+    expect(after.some((x) => x.id === c.id && x.deletedAt !== null)).toBe(true);
+
+    // 作者删己
+    const c2 = await createComment(student.id, t.id, { content: "自己删" });
+    await expect(deleteComment(student.id, c2.id)).resolves.toMatchObject({
+      deletedAt: expect.any(Date),
+    });
+
+    // student 删他人（管理员评论）被拒
+    const c3 = await createComment(owner.id, t.id, { content: "管理员的评论" });
+    await expect(deleteComment(student.id, c3.id)).rejects.toThrow("无权删除该评论");
+  });
+
+  it("删除重要评论写入活动日志", async () => {
+    const { student, teacher, project } = await scene();
+    const t = await createTask(student.id, project.id, { title: "甲" });
+    const c = await createComment(student.id, t.id, { content: "重要结论" });
+    await markCommentImportant(teacher.id, c.id, { important: true, type: "decision" });
+    await deleteComment(teacher.id, c.id);
+    const acts = await listTaskActivities(teacher.id, t.id);
+    expect(acts.some((a) => a.type === "comment_deleted")).toBe(true);
+  });
+});
+
 describe("任务活动流", () => {
   beforeEach(resetDb);
 
@@ -154,5 +251,28 @@ describe("通知已读", () => {
     expect(await countUnreadNotifications(owner.id)).toBe(1);
     await markAllNotificationsRead(owner.id);
     expect(await countUnreadNotifications(owner.id)).toBe(0);
+  });
+
+  it("未读优先，且组内按创建时间倒序", async () => {
+    const { owner, student, project } = await scene();
+    const t = await createTask(student.id, project.id, { title: "甲" });
+
+    await createComment(student.id, t.id, { content: "旧已读", mentions: [owner.id] });
+    const [first] = await listMyMentionNotifications(owner.id);
+    await markNotificationRead(owner.id, first.id);
+
+    await createComment(student.id, t.id, { content: "未读甲", mentions: [owner.id] });
+    await createComment(student.id, t.id, { content: "未读乙", mentions: [owner.id] });
+
+    const items = await listMyMentionNotifications(owner.id);
+    expect(items).toHaveLength(3);
+    // 未读在前，已读在后
+    expect(items[0].readAt).toBeNull();
+    expect(items[1].readAt).toBeNull();
+    expect(items[2].readAt).not.toBeNull();
+    // 未读组内按创建时间倒序（最新在前，非递增）
+    expect(new Date(items[0].createdAt).getTime()).toBeGreaterThanOrEqual(
+      new Date(items[1].createdAt).getTime(),
+    );
   });
 });

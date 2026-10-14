@@ -187,7 +187,7 @@ describe("GET /api/agent/projects/:projectId/tasks", () => {
 
   it("列出该项目任务", async () => {
     const { owner, student, project, token } = await scene();
-    await createTask(owner.id, project.id, { title: "甲", assigneeId: student.id });
+    await createTask(owner.id, project.id, { title: "甲", assigneeIds: [student.id] });
     await createTask(owner.id, project.id, { title: "乙" });
 
     const res = await listTasks(
@@ -200,7 +200,7 @@ describe("GET /api/agent/projects/:projectId/tasks", () => {
 
   it("按 status 与 assigneeId 筛选", async () => {
     const { owner, student, project, token } = await scene();
-    await createTask(owner.id, project.id, { title: "甲", assigneeId: student.id });
+    await createTask(owner.id, project.id, { title: "甲", assigneeIds: [student.id] });
     await createTask(owner.id, project.id, { title: "乙" });
 
     const byAssignee = await listTasks(
@@ -210,7 +210,7 @@ describe("GET /api/agent/projects/:projectId/tasks", () => {
     const list = (await byAssignee.json()).tasks;
     expect(list).toHaveLength(1);
     expect(list[0].title).toBe("甲");
-    expect(list[0].assigneeName).toBe("student");
+    expect(list[0].assigneeNames).toBe("student");
 
     const done = await listTasks(
       get(`/api/agent/projects/${project.id}/tasks?status=done`, token),
@@ -296,7 +296,7 @@ describe("GET /api/agent/tasks/:taskId", () => {
     const { owner, student, project, token } = await scene();
     const t = await createTask(owner.id, project.id, {
       title: "调研现有方案",
-      assigneeId: student.id,
+      assigneeIds: [student.id],
       dueDate: "2026-09-01",
     });
 
@@ -304,7 +304,7 @@ describe("GET /api/agent/tasks/:taskId", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.title).toBe("调研现有方案");
-    expect(body.assigneeName).toBe("student");
+    expect(body.assigneeNames).toBe("student");
     expect(body.dueDate).toBe("2026-09-01");
     expect(body.projectId).toBe(project.id);
   });

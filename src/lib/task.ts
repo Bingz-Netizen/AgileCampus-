@@ -4,15 +4,16 @@ import type { DbTx } from "@/db";
 import {
   labels,
   milestones,
+  taskAssignees,
   taskDependencies,
   taskLabels,
   tasks,
+  teamMembers,
   users,
   type TaskPriority,
   type TaskStatus,
 } from "@/db/schema";
 import { AppError, ForbiddenError, isUniqueViolation } from "./errors";
-import { getTeamMembership } from "./team";
 import { getProjectForUser } from "./project";
 import { notifyTaskAssigned, notifyTaskCompleted } from "./notify";
 import { recordTaskActivity } from "./activity";
@@ -33,9 +34,13 @@ export async function requireTaskWrite(actorId: string, projectId: string) {
   return access;
 }
 
-async function validateAssignee(teamId: string, assigneeId: string) {
-  const membership = await getTeamMembership(assigneeId, teamId);
-  if (!membership) throw new AppError("负责人不是团队成员");
+async function validateAssignees(teamId: string, assigneeIds: string[]) {
+  if (assigneeIds.length === 0) return;
+  const rows = await db
+    .select({ userId: teamMembers.userId })
+    .from(teamMembers)
+    .where(and(eq(teamMembers.teamId, teamId), inArray(teamMembers.userId, assigneeIds)));
+  if (rows.length !== assigneeIds.length) throw new AppError("负责人不是团队成员");
 }
 
 async function validateMilestone(projectId: string, milestoneId: string) {
@@ -61,7 +66,7 @@ export async function createTask(
   input: {
     title: string;
     description?: string;
-    assigneeId?: string;
+    assigneeIds?: string[];
     startDate?: string;
     dueDate?: string;
     milestoneId?: string;
@@ -72,7 +77,8 @@ export async function createTask(
 ) {
   const exec = opts?.tx ?? db;
   const access = await requireTaskWrite(actorId, projectId);
-  if (input.assigneeId) await validateAssignee(access.project.teamId, input.assigneeId);
+  const assigneeIds = [...new Set(input.assigneeIds ?? [])];
+  await validateAssignees(access.project.teamId, assigneeIds);
   if (input.milestoneId) await validateMilestone(projectId, input.milestoneId);
   if (input.parentTaskId) await validateParentTask(projectId, input.parentTaskId);
 
@@ -83,7 +89,6 @@ export async function createTask(
       createdById: actorId,
       title: input.title,
       description: input.description,
-      assigneeId: input.assigneeId,
       startDate: input.startDate,
       dueDate: input.dueDate,
       milestoneId: input.milestoneId,
@@ -93,9 +98,16 @@ export async function createTask(
     })
     .returning();
 
+  if (assigneeIds.length > 0) {
+    await exec
+      .insert(taskAssignees)
+      .values(assigneeIds.map((userId) => ({ taskId: task.id, userId })));
+  }
+
+  const created = { ...task, assigneeIds };
   // 非事务路径：即时通知（fire-and-forget，通知内部已吞异常）。事务路径由调用方提交后补发。
-  if (!opts?.tx && task.assigneeId) void notifyTaskAssigned(task);
-  return task;
+  if (!opts?.tx) void notifyTaskAssigned(created);
+  return created;
 }
 
 export async function updateTask(
@@ -104,7 +116,7 @@ export async function updateTask(
   patch: {
     title?: string;
     description?: string | null;
-    assigneeId?: string | null;
+    assigneeIds?: string[];
     startDate?: string | null;
     dueDate?: string | null;
     milestoneId?: string | null;
@@ -119,7 +131,14 @@ export async function updateTask(
   if (!task) throw new AppError("任务不存在");
 
   const access = await requireTaskWrite(actorId, task.projectId);
-  if (patch.assigneeId) await validateAssignee(access.project.teamId, patch.assigneeId);
+  const oldAssigneeIds = (
+    await exec
+      .select({ userId: taskAssignees.userId })
+      .from(taskAssignees)
+      .where(eq(taskAssignees.taskId, taskId))
+  ).map((r) => r.userId);
+  const nextAssigneeIds = patch.assigneeIds === undefined ? oldAssigneeIds : [...new Set(patch.assigneeIds)];
+  if (patch.assigneeIds !== undefined) await validateAssignees(access.project.teamId, nextAssigneeIds);
   if (patch.milestoneId) await validateMilestone(task.projectId, patch.milestoneId);
 
   // 完成-开始依赖：标记 done 前校验无未完成的前置任务（后置任务被前置阻断，不得完成）。
@@ -143,7 +162,6 @@ export async function updateTask(
     .set({
       ...(patch.title !== undefined && { title: patch.title }),
       ...(patch.description !== undefined && { description: patch.description }),
-      ...(patch.assigneeId !== undefined && { assigneeId: patch.assigneeId }),
       ...(patch.startDate !== undefined && { startDate: patch.startDate }),
       ...(patch.dueDate !== undefined && { dueDate: patch.dueDate }),
       ...(patch.milestoneId !== undefined && { milestoneId: patch.milestoneId }),
@@ -156,6 +174,16 @@ export async function updateTask(
     .returning();
   if (!updated) throw new AppError("任务不存在");
 
+  // 负责人集合变更：先删后插（仿 setTaskLabels）
+  if (patch.assigneeIds !== undefined) {
+    await exec.delete(taskAssignees).where(eq(taskAssignees.taskId, taskId));
+    if (nextAssigneeIds.length > 0) {
+      await exec
+        .insert(taskAssignees)
+        .values(nextAssigneeIds.map((userId) => ({ taskId, userId })));
+    }
+  }
+
   // 状态变更留痕：任务时间线合并展示「状态变更」与评论（含事务内一并写入，回滚即撤）
   if (patch.status !== undefined && patch.status !== task.status) {
     await recordTaskActivity({
@@ -167,13 +195,17 @@ export async function updateTask(
     });
   }
 
+  const result = { ...updated, assigneeIds: nextAssigneeIds };
   if (!opts?.tx) {
-    // 改派：通知新负责人
-    if (patch.assigneeId && patch.assigneeId !== task.assigneeId) void notifyTaskAssigned(updated);
+    // 改派：仅通知「新增」的负责人（避免给已指派者重复轰炸）
+    if (patch.assigneeIds !== undefined) {
+      const added = nextAssigneeIds.filter((id) => !oldAssigneeIds.includes(id));
+      if (added.length > 0) void notifyTaskAssigned(result, added);
+    }
     // 完成：通知创建者(≠操作者)
-    if (patch.status === "done" && task.status !== "done") void notifyTaskCompleted(updated, actorId);
+    if (patch.status === "done" && task.status !== "done") void notifyTaskCompleted(result, actorId);
   }
-  return updated;
+  return result;
 }
 
 export async function deleteTask(actorId: string, taskId: string) {
@@ -211,6 +243,39 @@ async function labelsByTask(taskIds: string[]): Promise<Map<string, TaskLabel[]>
   return map;
 }
 
+export type TaskAssignee = { id: string; name: string };
+
+// 负责人归并：与 labelsByTask 同理，避免 join 行乘积。按姓名排序。
+async function assigneesByTask(taskIds: string[]): Promise<Map<string, TaskAssignee[]>> {
+  const map = new Map<string, TaskAssignee[]>();
+  if (taskIds.length === 0) return map;
+
+  const rows = await db
+    .select({ taskId: taskAssignees.taskId, id: users.id, name: users.name })
+    .from(taskAssignees)
+    .innerJoin(users, eq(taskAssignees.userId, users.id))
+    .where(inArray(taskAssignees.taskId, taskIds))
+    .orderBy(users.name);
+
+  for (const r of rows) {
+    const list = map.get(r.taskId) ?? [];
+    list.push({ id: r.id, name: r.name });
+    map.set(r.taskId, list);
+  }
+  return map;
+}
+
+// 给任务行挂上负责人三件套：assignees（对象列表）/ assigneeIds / assigneeNames（顿号拼接）
+function attachAssignees<T extends { id: string }>(row: T, byTask: Map<string, TaskAssignee[]>) {
+  const assignees = byTask.get(row.id) ?? [];
+  return {
+    ...row,
+    assignees,
+    assigneeIds: assignees.map((a) => a.id),
+    assigneeNames: assignees.length > 0 ? assignees.map((a) => a.name).join("、") : null,
+  };
+}
+
 export async function listProjectTasks(actorId: string, projectId: string) {
   await requireProjectAccess(actorId, projectId);
   const rows = await db
@@ -225,18 +290,19 @@ export async function listProjectTasks(actorId: string, projectId: string) {
       sortOrder: tasks.sortOrder,
       milestoneId: tasks.milestoneId,
       parentTaskId: tasks.parentTaskId,
-      assigneeId: tasks.assigneeId,
-      assigneeName: users.name,
       updatedAt: tasks.updatedAt,
       completionNote: tasks.completionNote,
     })
     .from(tasks)
-    .leftJoin(users, eq(tasks.assigneeId, users.id))
     .where(eq(tasks.projectId, projectId))
     .orderBy(tasks.sortOrder);
 
-  const byTask = await labelsByTask(rows.map((r) => r.id));
-  return rows.map((r) => ({ ...r, labels: byTask.get(r.id) ?? [] }));
+  const ids = rows.map((r) => r.id);
+  const [byLabel, byAssignee] = await Promise.all([labelsByTask(ids), assigneesByTask(ids)]);
+  return rows.map((r) => ({
+    ...attachAssignees(r, byAssignee),
+    labels: byLabel.get(r.id) ?? [],
+  }));
 }
 
 // 列某任务之下的子任务（直接子级，不递归）
@@ -248,7 +314,7 @@ export async function listSubtasks(actorId: string, parentTaskId: string) {
   if (!parent) throw new AppError("任务不存在");
   await requireProjectAccess(actorId, parent.projectId);
 
-  return db
+  const rows = await db
     .select({
       id: tasks.id,
       title: tasks.title,
@@ -259,15 +325,15 @@ export async function listSubtasks(actorId: string, parentTaskId: string) {
       dueDate: tasks.dueDate,
       milestoneId: tasks.milestoneId,
       parentTaskId: tasks.parentTaskId,
-      assigneeId: tasks.assigneeId,
-      assigneeName: users.name,
       completionNote: tasks.completionNote,
       updatedAt: tasks.updatedAt,
     })
     .from(tasks)
-    .leftJoin(users, eq(tasks.assigneeId, users.id))
     .where(eq(tasks.parentTaskId, parentTaskId))
     .orderBy(tasks.sortOrder);
+
+  const byAssignee = await assigneesByTask(rows.map((r) => r.id));
+  return rows.map((r) => attachAssignees(r, byAssignee));
 }
 
 // 在某任务下建子任务：projectId 由父任务推得，调用方无须再传。
@@ -278,7 +344,7 @@ export async function createSubtask(
   input: {
     title: string;
     description?: string;
-    assigneeId?: string;
+    assigneeIds?: string[];
     startDate?: string;
     dueDate?: string;
     milestoneId?: string;
@@ -309,18 +375,15 @@ export async function getTaskDetail(actorId: string, taskId: string) {
       dueDate: tasks.dueDate,
       milestoneId: tasks.milestoneId,
       parentTaskId: tasks.parentTaskId,
-      assigneeId: tasks.assigneeId,
-      assigneeName: users.name,
       updatedAt: tasks.updatedAt,
       createdAt: tasks.createdAt,
     })
     .from(tasks)
-    .leftJoin(users, eq(tasks.assigneeId, users.id))
     .where(eq(tasks.id, taskId));
   if (!row) throw new AppError("任务不存在");
   await requireProjectAccess(actorId, row.projectId);
-  const byTask = await labelsByTask([row.id]);
-  return { ...row, labels: byTask.get(row.id) ?? [] };
+  const [byLabel, byAssignee] = await Promise.all([labelsByTask([row.id]), assigneesByTask([row.id])]);
+  return { ...attachAssignees(row, byAssignee), labels: byLabel.get(row.id) ?? [] };
 }
 
 // 沿既有依赖边（predecessor→successor）做 BFS：fromId 是否可「到达」toId。

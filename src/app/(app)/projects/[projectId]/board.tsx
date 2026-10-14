@@ -23,8 +23,8 @@ export type BoardTask = {
   priority: string;
   startDate: string | null;
   dueDate: string | null;
-  assigneeName: string | null;
-  assigneeId: string | null;
+  assigneeIds: string[];
+  assigneeNames: string | null;
   milestoneId: string | null;
   labels: { id: string; name: string; color: string }[];
   commentCount: number;
@@ -35,10 +35,7 @@ function Column({
   tasks,
   projectId,
   canWrite,
-  members,
-  milestones,
   allTasks,
-  allLabels,
   dependencies,
   blockedBy,
 }: {
@@ -46,10 +43,7 @@ function Column({
   tasks: BoardTask[];
   projectId: string;
   canWrite: boolean;
-  members: Option[];
-  milestones: Option[];
   allTasks: { id: string; title: string }[];
-  allLabels: Option[];
   dependencies: { predecessorId: string; successorId: string }[];
   blockedBy: Record<string, string[]>;
 }) {
@@ -72,10 +66,7 @@ function Column({
           task={t}
           projectId={projectId}
           canWrite={canWrite}
-          members={members}
-          milestones={milestones}
           allTasks={allTasks}
-          allLabels={allLabels}
           dependencies={dependencies}
           blockedBy={blockedBy}
         />
@@ -92,7 +83,6 @@ export function Board({
   members,
   milestones,
   allTasks,
-  allLabels,
   dependencies,
   blockedBy,
 }: {
@@ -103,7 +93,6 @@ export function Board({
   members: Option[];
   milestones: Option[];
   allTasks: { id: string; title: string }[];
-  allLabels: Option[];
   dependencies: { predecessorId: string; successorId: string }[];
   blockedBy: Record<string, string[]>;
 }) {
@@ -155,10 +144,7 @@ export function Board({
             tasks={optimisticTasks.filter((t) => col.matches(t))}
             projectId={projectId}
             canWrite={canWrite}
-            members={members}
-            milestones={milestones}
             allTasks={allTasks}
-            allLabels={allLabels}
             dependencies={dependencies}
             blockedBy={blockedBy}
           />

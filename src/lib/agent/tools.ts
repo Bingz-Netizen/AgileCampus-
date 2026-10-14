@@ -31,7 +31,7 @@ export async function listTasksFiltered(
 ) {
   let list = await listProjectTasks(actorId, projectId);
   if (filters.status) list = list.filter((t) => t.status === filters.status);
-  if (filters.assigneeId) list = list.filter((t) => t.assigneeId === filters.assigneeId);
+  if (filters.assigneeId) list = list.filter((t) => t.assigneeIds.includes(filters.assigneeId!));
   if (filters.dueBefore)
     list = list.filter((t) => t.dueDate !== null && t.dueDate <= filters.dueBefore!);
   return list.map((t) => ({
@@ -40,7 +40,7 @@ export async function listTasksFiltered(
     status: t.status,
     priority: t.priority,
     dueDate: t.dueDate,
-    assigneeName: t.assigneeName,
+    assigneeNames: t.assigneeNames,
   }));
 }
 
@@ -81,7 +81,7 @@ export function buildTools(actorId: string, projectId: string) {
         "按状态、负责人、截止日筛选该项目任务，返回含 taskId。改任务前必先用它取回 id。",
       inputSchema: z.object({
         status: z.enum(["todo", "doing", "done"]).optional(),
-        assigneeId: z.string().optional().describe("负责人用户 id"),
+        assigneeId: z.string().optional().describe("按负责人筛选（该人参与的任务）"),
         dueBefore: z.string().optional().describe("截止日不晚于此日期（YYYY-MM-DD）"),
       }),
       execute: async (filters) => listTasksFiltered(actorId, projectId, filters),
@@ -114,7 +114,7 @@ export function buildTools(actorId: string, projectId: string) {
           z.object({
             title: z.string(),
             description: z.string().optional(),
-            assigneeId: z.string().optional(),
+            assigneeIds: z.array(z.string()).optional(),
             dueDate: z.string().optional(),
             milestoneId: z.string().optional(),
             priority: z.enum(["low", "medium", "high"]).optional(),
@@ -132,7 +132,7 @@ export function buildTools(actorId: string, projectId: string) {
             patch: z.object({
               title: z.string().optional(),
               status: z.enum(["todo", "doing", "done"]).optional(),
-              assigneeId: z.string().optional(),
+              assigneeIds: z.array(z.string()).optional(),
               dueDate: z.string().optional(),
               milestoneId: z.string().optional(),
               priority: z.enum(["low", "medium", "high"]).optional(),

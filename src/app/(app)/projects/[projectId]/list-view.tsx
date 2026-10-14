@@ -1,5 +1,6 @@
 "use client";
 
+import { useMemo } from "react";
 import type { BoardTask } from "./board";
 import { LABEL_COLOR_CLASS } from "@/lib/board-columns";
 import { useFocusHighlight } from "./use-focus";
@@ -23,10 +24,27 @@ const PRIORITY_BADGE: Record<string, string> = {
   low: "bg-low-soft text-low",
 };
 
+const STATUS_ORDER: Record<string, number> = { doing: 0, todo: 1, done: 2 };
+const PRIORITY_ORDER: Record<string, number> = { high: 0, medium: 1, low: 2 };
+
+// 列表排序：状态（进行中→待办→已完成）→ 优先级（高→中→低）→ 截止日（早→晚，无截止日置尾）。
+// dueDate 为 "YYYY-MM-DD" 字符串，字典序即时间序；空值用远端哨兵压到末尾。
+function compareTasks(a: BoardTask, b: BoardTask): number {
+  const s = (STATUS_ORDER[a.status] ?? 3) - (STATUS_ORDER[b.status] ?? 3);
+  if (s !== 0) return s;
+  const p = (PRIORITY_ORDER[a.priority] ?? 3) - (PRIORITY_ORDER[b.priority] ?? 3);
+  if (p !== 0) return p;
+  const da = a.dueDate ?? "9999-12-31";
+  const db = b.dueDate ?? "9999-12-31";
+  return da < db ? -1 : da > db ? 1 : 0;
+}
+
 export function ListView({ projectId, tasks }: { projectId: string; tasks: BoardTask[] }) {
+  const sorted = useMemo(() => [...tasks].sort(compareTasks), [tasks]);
+
   return (
     <ul className="space-y-2">
-      {tasks.map((t) => (
+      {sorted.map((t) => (
         <ListRow key={t.id} projectId={projectId} task={t} />
       ))}
     </ul>
@@ -50,7 +68,7 @@ function ListRow({ projectId, task }: { projectId: string; task: BoardTask }) {
       <div className="min-w-0 flex-1">
         <p className="truncate font-medium text-ink">{task.title}</p>
         <p className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-ink-soft">
-          <span>{task.assigneeName ?? "未分配"}</span>
+          <span>{task.assigneeNames ?? "未分配"}</span>
           {(task.startDate || task.dueDate) && (
             <span>· {task.startDate ?? "…"}→{task.dueDate ?? "…"}</span>
           )}

@@ -48,7 +48,7 @@ describe("listTasksFiltered", () => {
 
   it("按状态与负责人筛选", async () => {
     const { student, project } = await scene();
-    await createTask(student.id, project.id, { title: "甲", assigneeId: student.id });
+    await createTask(student.id, project.id, { title: "甲", assigneeIds: [student.id] });
     await createTask(student.id, project.id, { title: "乙" });
 
     const all = await listTasksFiltered(student.id, project.id, {});
@@ -57,7 +57,7 @@ describe("listTasksFiltered", () => {
     const mine = await listTasksFiltered(student.id, project.id, { assigneeId: student.id });
     expect(mine).toHaveLength(1);
     expect(mine[0].title).toBe("甲");
-    expect(mine[0].assigneeName).toBe("student");
+    expect(mine[0].assigneeNames).toBe("student");
 
     const todos = await listTasksFiltered(student.id, project.id, { status: "todo" });
     expect(todos).toHaveLength(2);
