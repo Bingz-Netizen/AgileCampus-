@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { SCORING_RULES } from "@/lib/member-load";
 import type { LoadLevel, MemberLoad, UrgentTask } from "@/lib/member-load";
 import { withTask } from "./view-nav";
 
@@ -39,6 +40,13 @@ const LEVEL_LABEL: Record<LoadLevel, string> = {
   overload: "过载",
 };
 
+// 前三名排名徽章配色（金/银/铜）。项目色板无奖牌色，故用内联色值，不新增主题色。
+const RANK_MEDAL: Record<number, { bg: string; fg: string }> = {
+  1: { bg: "#f2c94c", fg: "#5a4300" }, // 金牌
+  2: { bg: "#c7ccd4", fg: "#3a3f47" }, // 银牌
+  3: { bg: "#cd7f4a", fg: "#4a2a12" }, // 铜牌
+};
+
 export function MemberLoadView({
   projectId,
   members,
@@ -51,6 +59,7 @@ export function MemberLoadView({
   const router = useRouter();
   const searchParams = useSearchParams();
   const [drawerId, setDrawerId] = useState<string | null>(null);
+  const [showRules, setShowRules] = useState(false);
 
   // 当前 URL 仅筛了单一成员时高亮对应卡片，给点击筛选以反馈
   const activeAssignee = (() => {
@@ -77,11 +86,20 @@ export function MemberLoadView({
 
   return (
     <section className="space-y-2">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-sm font-semibold text-ink-soft">成员负载</h2>
-        <span className="text-xs text-ink-faint">
-          绿 0–59 · 黄 60–79 · 红 80–100
-        </span>
+        <div className="flex items-center gap-3">
+          <span className="text-xs text-ink-faint">
+            绿 0–59 · 黄 60–79 · 红 80–100
+          </span>
+          <button
+            type="button"
+            onClick={() => setShowRules(true)}
+            className="text-xs text-primary hover:underline"
+          >
+            评分规则
+          </button>
+        </div>
       </div>
 
       {members.length === 0 ? (
@@ -110,6 +128,8 @@ export function MemberLoadView({
           onClose={() => setDrawerId(null)}
         />
       )}
+
+      {showRules && <ScoringRulesModal onClose={() => setShowRules(false)} />}
     </section>
   );
 }
@@ -131,6 +151,7 @@ function MemberCard({
 }) {
   const level = member.loadLevel;
   const hasOverdue = member.overdueCount > 0;
+  const rank = member.loadRank;
 
   return (
     <div
@@ -148,7 +169,18 @@ function MemberCard({
       } ${active ? "ring-2 ring-primary" : ""}`}
     >
       <div className="flex items-center justify-between gap-2">
-        <span className="truncate text-sm font-medium text-ink">{member.name}</span>
+        <div className="flex min-w-0 items-center gap-1.5">
+          {rank !== null && rank >= 1 && rank <= 3 && (
+            <span
+              className="ac-badge shrink-0"
+              style={{ backgroundColor: RANK_MEDAL[rank].bg, color: RANK_MEDAL[rank].fg }}
+              title={`团队负载第 ${rank} 名`}
+            >
+              第{rank}名
+            </span>
+          )}
+          <span className="truncate text-sm font-medium text-ink">{member.name}</span>
+        </div>
         {hasOverdue && (
           <span
             className="h-2 w-2 shrink-0 rounded-full bg-high"
@@ -343,6 +375,53 @@ function Drawer({
           )}
         </ul>
       </aside>
+    </div>
+  );
+}
+
+// 「评分规则」弹窗：右上角 ✕ 关闭、点遮罩关闭、按 Esc 关闭。文案集中取自 SCORING_RULES。
+function ScoringRulesModal({ onClose }: { onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 sm:items-center"
+      role="dialog"
+      aria-modal="true"
+      aria-label="评分规则"
+    >
+      <button
+        type="button"
+        aria-label="关闭"
+        onClick={onClose}
+        className="fixed inset-0 cursor-default bg-ink/45 backdrop-blur-sm"
+      />
+      <div className="relative z-10 my-auto w-full max-w-lg ac-card p-5 shadow-pop">
+        <header className="mb-4 flex items-center justify-between">
+          <h3 className="font-display text-base font-semibold text-ink">评分规则</h3>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="关闭"
+            className="grid h-7 w-7 place-items-center rounded-field text-ink-faint hover:bg-sunken hover:text-ink"
+          >
+            ✕
+          </button>
+        </header>
+
+        <dl className="space-y-3">
+          {SCORING_RULES.map((rule) => (
+            <div key={rule.title} className="rounded-lg bg-sunken px-3 py-2">
+              <dt className="text-xs font-semibold text-ink">{rule.title}</dt>
+              <dd className="mt-0.5 text-xs leading-relaxed text-ink-soft">{rule.detail}</dd>
+            </div>
+          ))}
+        </dl>
+      </div>
     </div>
   );
 }

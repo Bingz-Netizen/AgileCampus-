@@ -39,12 +39,60 @@ export type MemberLoad = {
   deadlinePressure: number; // 截止压力分 = min(加权和, 60)
   loadScore: number; // 负载评分 = min(100, round(基础分 + 压力分))
   loadLevel: LoadLevel; // 0–59 normal / 60–79 busy / 80–100 overload
+  loadRank: number | null; // 当前团队内负载排名（1 起）；仅 1–3 展示徽章
+  rankTotal: number; // 参与排名的成员总数
   urgent: UrgentTask[]; // 最紧急 3 条（未完成，按截止时间升序）
   all: UrgentTask[]; // 全部任务（含已完成），按截止时间升序
 };
 
 const PRIORITY_ORDER: Record<TaskPriority, number> = { high: 0, medium: 1, low: 2 };
 const MS_DAY = 86_400_000;
+
+// 评分规则常量：唯一事实来源。computeMemberLoad 与「评分规则」弹窗文案共用，
+// 避免两处各自硬编码导致口径漂移。
+export const SCORING = {
+  basePerTask: 4, // 每项未完成任务的数量基础分
+  baseCap: 40, // 任务数量基础分上限
+  overdueWeight: 15, // 逾期任务权重
+  todayDueWeight: 12, // 今日截止权重
+  dueIn3DaysWeight: 8, // 1–3 天内截止权重
+  dueIn7DaysWeight: 4, // 4–7 天内截止权重
+  dueLaterWeight: 1, // 7 天以上截止权重
+  pressureCap: 60, // 截止压力分上限
+  scoreCap: 100, // 负载评分上限
+  busyMin: 60, // 「较忙」下限（含）
+  overloadMin: 80, // 「过载」下限（含）
+} as const;
+
+// 「评分规则」弹窗内容：标题 + 明细。数值字段全部取自 SCORING，保证与计算逻辑一致。
+export const SCORING_RULES: { title: string; detail: string }[] = [
+  {
+    title: "统计口径",
+    detail: "只统计未完成任务（todo / doing，含子任务），已完成任务不计入评分。",
+  },
+  {
+    title: "任务数量基础分",
+    detail: `min(未完成任务数 × ${SCORING.basePerTask}, ${SCORING.baseCap})`,
+  },
+  {
+    title: "截止压力分",
+    detail: `min(逾期任务数 × ${SCORING.overdueWeight} + 今日截止数 × ${SCORING.todayDueWeight} + 1–3 天内截止数 × ${SCORING.dueIn3DaysWeight} + 4–7 天内截止数 × ${SCORING.dueIn7DaysWeight} + 7 天以上截止数 × ${SCORING.dueLaterWeight}, ${SCORING.pressureCap})`,
+  },
+  {
+    title: "负载评分",
+    detail: `min(${SCORING.scoreCap}, round(任务数量基础分 + 截止压力分))`,
+  },
+  {
+    title: "等级",
+    detail: `0–${SCORING.busyMin - 1} 正常（绿色）· ${SCORING.busyMin}–${SCORING.overloadMin - 1} 较忙（黄色）· ${SCORING.overloadMin}–${SCORING.scoreCap} 过载（红色）`,
+  },
+  { title: "逾期提醒", detail: "有逾期任务时，成员卡片显示红色边框 + 红点。" },
+  {
+    title: "排名",
+    detail:
+      "按成员在当前项目团队内的负载评分（loadScore）从高到低排序；同分依次按逾期任务数、截止压力分、总任务数降序、姓名升序，确保排名唯一；仅展示第 1–3 名。",
+  },
+];
 
 // 截止时间升序（空截止排最后）；同截止按优先级高→低，再按标题。
 function byDueUrgency(a: UrgentTask, b: UrgentTask): number {
@@ -89,7 +137,7 @@ export function computeMemberLoad(
     priority: t.priority,
   });
 
-  const rows = members.map((m): MemberLoad => {
+  const rows = members.map((m): Omit<MemberLoad, "loadRank" | "rankTotal"> => {
     const list = byMember.get(m.id) ?? [];
     const open = list.filter(isOpen);
     const openCount = open.length;
@@ -110,18 +158,22 @@ export function computeMemberLoad(
       else dueLaterCount++;
     }
 
-    const baseScore = Math.min(openCount * 4, 40);
+    const baseScore = Math.min(openCount * SCORING.basePerTask, SCORING.baseCap);
     const deadlinePressure = Math.min(
-      overdueCount * 15 +
-        todayDueCount * 12 +
-        dueIn3DaysCount * 8 +
-        dueIn7DaysCount * 4 +
-        dueLaterCount * 1,
-      60,
+      overdueCount * SCORING.overdueWeight +
+        todayDueCount * SCORING.todayDueWeight +
+        dueIn3DaysCount * SCORING.dueIn3DaysWeight +
+        dueIn7DaysCount * SCORING.dueIn7DaysWeight +
+        dueLaterCount * SCORING.dueLaterWeight,
+      SCORING.pressureCap,
     );
-    const loadScore = Math.min(100, Math.round(baseScore + deadlinePressure));
+    const loadScore = Math.min(SCORING.scoreCap, Math.round(baseScore + deadlinePressure));
     const loadLevel: LoadLevel =
-      loadScore >= 80 ? "overload" : loadScore >= 60 ? "busy" : "normal";
+      loadScore >= SCORING.overloadMin
+        ? "overload"
+        : loadScore >= SCORING.busyMin
+          ? "busy"
+          : "normal";
 
     return {
       id: m.id,
@@ -143,11 +195,15 @@ export function computeMemberLoad(
     };
   });
 
-  // 评分高者在前，便于一眼看出谁任务过多、谁无事可做
-  return rows.sort(
+  // 排名唯一：loadScore 降序，同分依次按逾期数/截止压力分/总任务数降序、姓名升序。
+  // 排序即排名顺序（loadRank 1..N），前三名在卡片展示徽章，其余不展示。
+  const ranked = [...rows].sort(
     (a, b) =>
       b.loadScore - a.loadScore ||
-      b.openCount - a.openCount ||
+      b.overdueCount - a.overdueCount ||
+      b.deadlinePressure - a.deadlinePressure ||
+      b.totalCount - a.totalCount ||
       a.name.localeCompare(b.name),
   );
+  return ranked.map((row, i) => ({ ...row, loadRank: i + 1, rankTotal: ranked.length }));
 }
