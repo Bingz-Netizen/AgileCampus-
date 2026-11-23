@@ -15,6 +15,19 @@ const PRIORITY_BADGE: Record<string, string> = {
   low: "bg-low-soft text-low",
 };
 
+const BUG_SEVERITY_LABEL: Record<string, string> = {
+  blocker: "阻断级",
+  major: "重要级",
+  minor: "优化级",
+};
+
+const BUG_STATUS_LABEL: Record<string, string> = {
+  open: "待处理",
+  fixing: "处理中",
+  fixed: "已修复",
+  verified: "验证通过",
+};
+
 export function TaskCard({
   task,
   projectId,
@@ -91,6 +104,15 @@ export function TaskCard({
           <span className={`ac-badge ${PRIORITY_BADGE[task.priority] ?? "bg-low-soft text-low"}`}>
             {task.priority}
           </span>
+          {task.kind === "bug" && (
+            <span
+              className="ac-badge bg-high-soft text-high"
+              title={`缺陷 · ${BUG_SEVERITY_LABEL[task.bugSeverity ?? "major"] ?? "重要级"} · ${BUG_STATUS_LABEL[task.bugStatus ?? "open"] ?? "待处理"}`}
+            >
+              缺陷 · {BUG_SEVERITY_LABEL[task.bugSeverity ?? "major"] ?? "重要级"}
+            </span>
+          )}
+          {task.blocked && <span className="ac-badge bg-high-soft text-high">阻塞</span>}
         </p>
         {task.labels.length > 0 && (
           <p className="mt-1 flex flex-wrap items-center gap-1">

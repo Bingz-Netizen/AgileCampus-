@@ -1,4 +1,4 @@
-"use server";
+﻿"use server";
 
 import { z } from "zod";
 import { revalidatePath } from "next/cache";
@@ -9,7 +9,7 @@ import { AppError } from "@/lib/errors";
 const schema = z.object({
   teamId: z.uuid(),
   userId: z.uuid(),
-  role: z.enum(["admin", "teacher", "student"]),
+  role: z.enum(["admin", "teacher", "student", "leader"]),
 });
 
 export async function updateRoleAction(formData: FormData) {

@@ -1,4 +1,4 @@
-import { z } from "zod";
+﻿import { z } from "zod";
 import { eq } from "drizzle-orm";
 import { notFound, redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
@@ -49,9 +49,10 @@ export default async function MembersPage({
                 <input type="hidden" name="userId" value={m.userId} />
                 {/* key=role：角色变更后强制重挂载，使 defaultValue 重新采纳（非受控 select 不更新已挂载节点） */}
                 <select key={m.role} name="role" defaultValue={m.role} className="ac-field w-auto py-1 text-sm">
-                  <option value="admin">admin</option>
-                  <option value="teacher">teacher</option>
-                  <option value="student">student</option>
+                  <option value="admin">admin（管理员）</option>
+                  <option value="teacher">teacher（教师）</option>
+                  <option value="leader">leader（小组长）</option>
+                  <option value="student">student（学生）</option>
                 </select>
                 <button className="ac-btn px-2 py-1 text-xs">保存</button>
               </form>

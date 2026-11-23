@@ -6,6 +6,7 @@ import {
   buildAssignedCard,
   buildCompletedCard,
   buildDueReminderCard,
+  buildReviewCard,
   type CardTask,
   type ReminderItem,
 } from "./feishu-card";
@@ -81,6 +82,30 @@ export async function notifyTaskCompleted(task: TaskRow, actorId: string): Promi
   const openId = await openIdOf(creatorId);
   if (!openId) return;
   await safeSend(openId, buildCompletedCard(await enrich(task)));
+}
+
+// 评审结果通知：全体负责人（评审人除外）各收一张飞书卡片；失败只记日志
+export async function notifyReviewResult(
+  task: TaskRow,
+  actorId: string,
+  result: { passed: boolean; reviewer: string; opinion: string },
+): Promise<void> {
+  try {
+    const card = buildReviewCard({
+      passed: result.passed,
+      reviewer: result.reviewer,
+      opinion: result.opinion,
+      task: await enrich(task),
+    });
+    const recipients = [...new Set(task.assigneeIds)].filter((id) => id !== actorId);
+    for (const userId of recipients) {
+      const openId = await openIdOf(userId);
+      if (!openId) continue;
+      await safeSend(openId, card);
+    }
+  } catch (e) {
+    console.error("[notify] 评审通知失败", e);
+  }
 }
 
 // 扫全库临期(明日到期)+逾期(已过期未 done)，按负责人聚合为一封卡片日报。返回发送人数与扫描任务数。

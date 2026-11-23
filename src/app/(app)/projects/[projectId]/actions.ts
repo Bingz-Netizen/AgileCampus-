@@ -26,6 +26,10 @@ const createTaskSchema = z.object({
   dueDate: z.iso.date("日期格式不正确").optional(),
   milestoneId: z.uuid().optional(),
   priority: z.enum(["low", "medium", "high"]).optional(),
+  kind: z.enum(["feature", "bug"]).optional(),
+  estimateHours: z.coerce.number().positive("预估工时须大于 0").max(1000).optional(),
+  sprintId: z.uuid().optional(),
+  bugSeverity: z.enum(["blocker", "major", "minor"]).optional(),
 });
 
 export async function createTaskAction(
@@ -42,6 +46,10 @@ export async function createTaskAction(
     dueDate: raw.dueDate || undefined,
     milestoneId: raw.milestoneId || undefined,
     priority: raw.priority || undefined,
+    kind: raw.kind || undefined,
+    estimateHours: raw.estimateHours || undefined,
+    sprintId: raw.sprintId || undefined,
+    bugSeverity: raw.bugSeverity || undefined,
   });
   if (!parsed.success) return { error: parsed.error.issues[0].message };
 
@@ -103,6 +111,7 @@ const movePatchSchema = z.object({
   assigneeIds: z.array(z.uuid()).optional(),
   priority: z.enum(["low", "medium", "high"]).optional(),
   milestoneId: z.uuid().nullable().optional(),
+  bugStatus: z.enum(["open", "fixing", "fixed", "verified"]).nullable().optional(),
 });
 
 const moveTaskSchema = z.object({
@@ -144,6 +153,15 @@ const updateTaskSchema = z.object({
   dueDate: z.iso.date("日期格式不正确").optional(),
   priority: z.enum(["low", "medium", "high"]),
   completionNote: z.string().trim().optional(),
+  // 最后一周新增字段
+  sprintId: z.uuid().optional(),
+  kind: z.enum(["feature", "bug"]),
+  bugSeverity: z.enum(["blocker", "major", "minor"]).optional(),
+  bugStatus: z.enum(["open", "fixing", "fixed", "verified"]).optional(),
+  relatedTaskId: z.uuid().optional(),
+  estimateHours: z.coerce.number().positive("预估工时须大于 0").max(1000).optional(),
+  blocked: z.enum(["on"]).optional(),
+  blockedReason: z.string().trim().optional(),
 });
 
 export async function updateTaskAction(
@@ -159,6 +177,12 @@ export async function updateTaskAction(
     milestoneId: raw.milestoneId || undefined,
     startDate: raw.startDate || undefined,
     dueDate: raw.dueDate || undefined,
+    sprintId: raw.sprintId || undefined,
+    bugSeverity: raw.bugSeverity || undefined,
+    bugStatus: raw.bugStatus || undefined,
+    relatedTaskId: raw.relatedTaskId || undefined,
+    estimateHours: raw.estimateHours || undefined,
+    blocked: raw.blocked || undefined,
   });
   if (!parsed.success) return { error: parsed.error.issues[0].message };
 
@@ -181,6 +205,14 @@ export async function updateTaskAction(
       dueDate: patch.dueDate ?? null,
       priority: patch.priority,
       completionNote: patch.completionNote ?? null,
+      sprintId: patch.sprintId ?? null,
+      kind: patch.kind,
+      bugSeverity: patch.kind === "bug" ? (patch.bugSeverity ?? null) : null,
+      bugStatus: patch.kind === "bug" ? (patch.bugStatus ?? "open") : null,
+      relatedTaskId: patch.kind === "bug" ? (patch.relatedTaskId ?? null) : null,
+      estimateHours: patch.estimateHours ?? null,
+      blocked: patch.blocked === "on",
+      blockedReason: patch.blockedReason ?? null,
     });
     await setTaskLabels(session.user.id, taskId, labelIds);
   } catch (e) {

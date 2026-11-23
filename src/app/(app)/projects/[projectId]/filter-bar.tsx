@@ -15,6 +15,7 @@ const GROUP_LABEL: Record<GroupBy, string> = {
   assignee: "指派人",
   priority: "优先级",
   milestone: "里程碑",
+  bugStatus: "缺陷状态",
 };
 
 const PRIORITY_OPTIONS: Option[] = [
@@ -65,6 +66,7 @@ export function FilterBar({
     filters.priority.length > 0 ||
     filters.label.length > 0 ||
     filters.milestone.length > 0 ||
+    filters.kind.length > 0 ||
     filters.overdue;
 
   return (
@@ -125,6 +127,20 @@ export function FilterBar({
         <Chip on={filters.overdue} onClick={() => push({ ...filters, overdue: !filters.overdue })}>
           仅看逾期
         </Chip>
+
+        <Chip
+          on={filters.kind.includes("bug")}
+          onClick={() =>
+            push({
+              ...filters,
+              kind: filters.kind.includes("bug")
+                ? filters.kind.filter((k) => k !== "bug")
+                : [...filters.kind, "bug"],
+            })
+          }
+        >
+          仅看缺陷
+        </Chip>
       </div>
 
       <div className="flex flex-wrap items-center gap-2 border-t border-line pt-2">
@@ -153,6 +169,7 @@ export function FilterBar({
                 priority: [],
                 label: [],
                 milestone: [],
+                kind: [],
                 overdue: false,
               })
             }

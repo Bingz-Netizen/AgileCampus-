@@ -20,6 +20,8 @@ function task(over: Partial<FilterableTask> = {}): FilterableTask {
     milestoneId: null,
     dueDate: null,
     status: "todo",
+    kind: "feature",
+    bugStatus: null,
     labels: [],
     ...over,
   };
@@ -123,6 +125,12 @@ describe("applyFilters", () => {
     const f = { ...EMPTY_FILTERS, assignee: [A], priority: ["high"] };
     expect(applyFilters(list, f, today)).toHaveLength(1);
   });
+
+  it("按类型筛选缺陷卡", () => {
+    const list = [task({ kind: "bug" }), task({ kind: "feature" }), task({ kind: "bug" })];
+    const f = { ...EMPTY_FILTERS, kind: ["bug"] };
+    expect(applyFilters(list, f, today)).toHaveLength(2);
+  });
 });
 
 describe("deriveColumns", () => {
@@ -134,9 +142,12 @@ describe("deriveColumns", () => {
     milestones: [{ id: M, name: "一期" }],
   };
 
-  it("按状态分组：三列，patch 改 status", () => {
+  it("按状态分组：五列（含评审两态），patch 改 status", () => {
     const cols = deriveColumns("status", ctx);
-    expect(cols.map((c) => c.key)).toEqual(["todo", "doing", "done"]);
+    expect(cols.map((c) => c.key)).toEqual(["todo", "doing", "review", "rejected", "done"]);
+    // 评审两态不可拖入，只能走任务详情的评审动作
+    expect(cols[2].droppable).toBe(false);
+    expect(cols[3].droppable).toBe(false);
     expect(cols[1].patch).toEqual({ status: "doing" });
     expect(cols[1].matches(task({ status: "doing" }))).toBe(true);
     expect(cols[1].matches(task({ status: "todo" }))).toBe(false);

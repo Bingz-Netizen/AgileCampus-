@@ -22,7 +22,7 @@ type GanttTask = {
   title: string;
   description: string | null;
   completionNote: string | null;
-  status: "todo" | "doing" | "done";
+  status: "todo" | "doing" | "done" | "review" | "rejected";
   priority: string;
   startDate: string | null;
   dueDate: string | null;

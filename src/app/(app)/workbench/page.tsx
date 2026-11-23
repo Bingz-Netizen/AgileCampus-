@@ -8,10 +8,6 @@ import {
   type WorkbenchTeam,
 } from "@/lib/workbench";
 
-type Props = {
-  searchParams: Promise<{ view?: string }>;
-};
-
 // 风险徽章配色均取自既有设计令牌：高=high(红)、中=primary(蓝)、低=low(灰)
 const RISK_BADGE: Record<RiskLevel, { label: string; className: string }> = {
   high: { label: "高风险", className: "ac-badge bg-high-soft text-high" },
@@ -116,12 +112,11 @@ function teamStats(t: WorkbenchTeam, mine: boolean) {
   );
 }
 
-export default async function WorkbenchPage({ searchParams }: Props) {
+export default async function WorkbenchPage() {
   const session = await auth();
   if (!session?.user) redirect("/login");
-  const sp = await searchParams;
-  // 视图模式（文档第 3 项口径）：auto=按各团队实际角色；student=强制学生视角（教师预览用）
-  const forcedStudent = sp.view === "student";
+  // 统计范围由团队内角色决定（不再提供手动视图开关）：
+  // admin/teacher 的团队看全团队数据，学生团队只看本人数据。
   const today = new Date().toISOString().slice(0, 10);
   const overview = await getWorkbenchOverview(session.user.id, today);
   const hasTeacherTeam = overview.teams.some((t) => t.isTeacher);
@@ -129,35 +124,15 @@ export default async function WorkbenchPage({ searchParams }: Props) {
   return (
     <main className="space-y-8">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="font-display text-2xl font-semibold text-ink">工作台</h1>
-        {hasTeacherTeam && (
-          <div className="flex items-center gap-1 rounded-field bg-sunken p-1 text-sm">
-            <Link
-              href="/workbench"
-              className={`rounded-field px-3 py-1 transition-colors ${
-                !forcedStudent ? "bg-surface text-ink shadow-sm" : "text-ink-soft"
-              }`}
-            >
-              教师视图
-            </Link>
-            <Link
-              href="/workbench?view=student"
-              className={`rounded-field px-3 py-1 transition-colors ${
-                forcedStudent ? "bg-surface text-ink shadow-sm" : "text-ink-soft"
-              }`}
-            >
-              学生视图
-            </Link>
-          </div>
-        )}
+        <h1 className="font-display text-2xl font-semibold text-ink">项目进度</h1>
       </div>
 
-      {/* 顶部 4 张统计卡：教师=活跃项目/高风险/逾期任务/逾期里程碑；学生（含教师切学生视角）=活跃项目/高风险/我的逾期/我的未完成。
-          以 hasTeacherTeam 为准而非 forcedStudent——学生没有切换开关，恒定学生口径，防止全量统计泄漏 */}
+      {/* 顶部 4 张统计卡：有教师团队=活跃项目/高风险/逾期任务/逾期里程碑；
+          纯学生=活跃项目/高风险/我的逾期/我的未完成（学生看不到全量统计） */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <StatCard label="活跃项目" value={overview.totals.projectCount} />
         <StatCard label="高风险项目" value={overview.totals.highRiskCount} danger />
-        {!hasTeacherTeam || forcedStudent ? (
+        {!hasTeacherTeam ? (
           <>
             <StatCard label="我的逾期任务" value={overview.totals.myOverdue} danger />
             <StatCard
@@ -187,8 +162,8 @@ export default async function WorkbenchPage({ searchParams }: Props) {
         </div>
       ) : (
         overview.teams.map((t) => {
-          // 学生团队强制学生口径；教师团队随视图开关切换（服务端兜底，学生手输 URL 也只见本人口径）
-          const mine = !t.isTeacher || forcedStudent;
+          // 角色定范围：管理员/教师所在的团队看全团队，学生团队只看本人
+          const mine = !t.isTeacher;
           const stats = teamStats(t, mine);
           return (
             <section key={t.teamId} className="space-y-3">
@@ -197,15 +172,6 @@ export default async function WorkbenchPage({ searchParams }: Props) {
                   <h2 className="font-display text-base font-semibold text-ink">
                     {t.teamName}
                   </h2>
-                  <span
-                    className={
-                      t.isTeacher
-                        ? "ac-badge bg-primary-soft text-primary"
-                        : "ac-badge bg-low-soft text-low"
-                    }
-                  >
-                    {t.isTeacher ? "教师视角" : "学生视角"}
-                  </span>
                 </div>
                 <span className="text-xs tabular-nums text-ink-soft">
                   {t.projects.length} 个项目 · 任务 {stats.done}/{stats.total} · 逾期{" "}

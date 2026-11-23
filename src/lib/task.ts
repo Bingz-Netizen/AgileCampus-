@@ -1,15 +1,19 @@
-import { and, eq, inArray, ne, sql } from "drizzle-orm";
+﻿import { and, eq, inArray, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
 import type { DbTx } from "@/db";
 import {
   labels,
   milestones,
+  sprints,
   taskAssignees,
   taskDependencies,
   taskLabels,
   tasks,
   teamMembers,
   users,
+  type BugSeverity,
+  type BugStatus,
+  type TaskKind,
   type TaskPriority,
   type TaskStatus,
 } from "@/db/schema";
@@ -19,7 +23,8 @@ import { notifyTaskAssigned, notifyTaskCompleted } from "./notify";
 import { recordTaskActivity } from "./activity";
 
 // 任务写操作角色：admin + student（teacher 只读，设计文档 §5）
-const TASK_WRITE_ROLES = ["admin", "student"];
+// 小组长（leader）参与任务增删改与提交评审，但不参与终审通过
+const TASK_WRITE_ROLES = ["admin", "student", "leader"];
 
 async function requireProjectAccess(actorId: string, projectId: string) {
   const access = await getProjectForUser(actorId, projectId);
@@ -60,6 +65,25 @@ async function validateParentTask(projectId: string, parentTaskId: string) {
   if (!p) throw new AppError("父任务不属于该项目");
 }
 
+// 迭代须存在且同项目——防把任务挂到别的项目的迭代上
+async function validateSprint(projectId: string, sprintId: string) {
+  const [s] = await db
+    .select({ id: sprints.id })
+    .from(sprints)
+    .where(and(eq(sprints.id, sprintId), eq(sprints.projectId, projectId)));
+  if (!s) throw new AppError("迭代不属于该项目");
+}
+
+// 缺陷卡关联的原始任务须同项目
+async function validateRelatedTask(projectId: string, relatedTaskId: string, selfId?: string) {
+  if (selfId && relatedTaskId === selfId) throw new AppError("关联任务不能是任务自身");
+  const [t] = await db
+    .select({ id: tasks.id })
+    .from(tasks)
+    .where(and(eq(tasks.id, relatedTaskId), eq(tasks.projectId, projectId)));
+  if (!t) throw new AppError("关联任务不属于该项目");
+}
+
 export async function createTask(
   actorId: string,
   projectId: string,
@@ -72,6 +96,15 @@ export async function createTask(
     milestoneId?: string;
     priority?: TaskPriority;
     parentTaskId?: string;
+    // 最后一周：迭代归属、缺陷卡、估时、阻塞
+    sprintId?: string;
+    kind?: TaskKind;
+    bugSeverity?: BugSeverity;
+    bugStatus?: BugStatus;
+    relatedTaskId?: string;
+    estimateHours?: number;
+    blocked?: boolean;
+    blockedReason?: string;
   },
   opts?: { tx?: DbTx },
 ) {
@@ -81,6 +114,8 @@ export async function createTask(
   await validateAssignees(access.project.teamId, assigneeIds);
   if (input.milestoneId) await validateMilestone(projectId, input.milestoneId);
   if (input.parentTaskId) await validateParentTask(projectId, input.parentTaskId);
+  if (input.sprintId) await validateSprint(projectId, input.sprintId);
+  if (input.relatedTaskId) await validateRelatedTask(projectId, input.relatedTaskId);
 
   const [task] = await exec
     .insert(tasks)
@@ -95,6 +130,14 @@ export async function createTask(
       parentTaskId: input.parentTaskId,
       priority: input.priority ?? "medium",
       sortOrder: Date.now(),
+      sprintId: input.sprintId,
+      kind: input.kind ?? "feature",
+      bugSeverity: input.kind === "bug" ? (input.bugSeverity ?? null) : null,
+      bugStatus: input.kind === "bug" ? (input.bugStatus ?? "open") : null,
+      relatedTaskId: input.kind === "bug" ? (input.relatedTaskId ?? null) : null,
+      estimateHours: input.estimateHours ?? null,
+      blocked: input.blocked ?? false,
+      blockedReason: input.blocked ? (input.blockedReason?.trim() || null) : null,
     })
     .returning();
 
@@ -123,12 +166,25 @@ export async function updateTask(
     status?: TaskStatus;
     priority?: TaskPriority;
     completionNote?: string | null;
+    sprintId?: string | null;
+    kind?: TaskKind;
+    bugSeverity?: BugSeverity | null;
+    bugStatus?: BugStatus | null;
+    relatedTaskId?: string | null;
+    estimateHours?: number | null;
+    blocked?: boolean;
+    blockedReason?: string | null;
   },
   opts?: { tx?: DbTx },
 ) {
   const exec = opts?.tx ?? db;
   const [task] = await exec.select().from(tasks).where(eq(tasks.id, taskId));
   if (!task) throw new AppError("任务不存在");
+
+  // 评审两态只能由评审动作推进，禁止经 updateTask 直接写入
+  if (patch.status === "review" || patch.status === "rejected") {
+    throw new AppError("「待评审 / 已退回」只能通过提交评审、通过评审、退回修改推进");
+  }
 
   const access = await requireTaskWrite(actorId, task.projectId);
   const oldAssigneeIds = (
@@ -140,6 +196,8 @@ export async function updateTask(
   const nextAssigneeIds = patch.assigneeIds === undefined ? oldAssigneeIds : [...new Set(patch.assigneeIds)];
   if (patch.assigneeIds !== undefined) await validateAssignees(access.project.teamId, nextAssigneeIds);
   if (patch.milestoneId) await validateMilestone(task.projectId, patch.milestoneId);
+  if (patch.sprintId) await validateSprint(task.projectId, patch.sprintId);
+  if (patch.relatedTaskId) await validateRelatedTask(task.projectId, patch.relatedTaskId, taskId);
 
   // 完成-开始依赖：标记 done 前校验无未完成的前置任务（后置任务被前置阻断，不得完成）。
   // 仅限「非 done → done」的跃迁，避免已完成任务补保存时被历史前置误拦。
@@ -168,6 +226,27 @@ export async function updateTask(
       ...(patch.status !== undefined && { status: patch.status }),
       ...(patch.priority !== undefined && { priority: patch.priority }),
       ...(patch.completionNote !== undefined && { completionNote: patch.completionNote }),
+      ...(patch.sprintId !== undefined && { sprintId: patch.sprintId }),
+      ...(patch.kind !== undefined && { kind: patch.kind }),
+      // 缺陷字段仅在 kind=bug 时保留；改回功能任务时清空，避免残留脏值
+      ...(patch.kind === "feature" && { bugSeverity: null, bugStatus: null, relatedTaskId: null }),
+      ...(patch.kind === "bug" && patch.bugStatus === undefined && task.bugStatus === null && {
+        bugStatus: "open" as const,
+      }),
+      ...(patch.bugSeverity !== undefined && { bugSeverity: patch.bugSeverity }),
+      ...(patch.bugStatus !== undefined && { bugStatus: patch.bugStatus }),
+      ...(patch.relatedTaskId !== undefined && { relatedTaskId: patch.relatedTaskId }),
+      ...(patch.estimateHours !== undefined && { estimateHours: patch.estimateHours }),
+      ...(patch.blocked !== undefined && { blocked: patch.blocked }),
+      ...(patch.blocked !== undefined &&
+        !patch.blocked && { blockedReason: null }),
+      ...(patch.blockedReason !== undefined && { blockedReason: patch.blockedReason }),
+      // 完成时刻：首次进入 done 时落 now()；从 done 退回其它状态时清空，燃尽图据此重算
+      ...(patch.status === "done" &&
+        task.status !== "done" && { completedAt: sql`now()` }),
+      ...(patch.status !== undefined &&
+        patch.status !== "done" &&
+        task.status === "done" && { completedAt: null }),
       updatedAt: sql`now()`,
     })
     .where(eq(tasks.id, taskId))
@@ -292,6 +371,16 @@ export async function listProjectTasks(actorId: string, projectId: string) {
       parentTaskId: tasks.parentTaskId,
       updatedAt: tasks.updatedAt,
       completionNote: tasks.completionNote,
+      // 最后一周新增字段（看板/详情/导出共用）
+      sprintId: tasks.sprintId,
+      kind: tasks.kind,
+      bugSeverity: tasks.bugSeverity,
+      bugStatus: tasks.bugStatus,
+      relatedTaskId: tasks.relatedTaskId,
+      estimateHours: tasks.estimateHours,
+      blocked: tasks.blocked,
+      blockedReason: tasks.blockedReason,
+      completedAt: tasks.completedAt,
     })
     .from(tasks)
     .where(eq(tasks.projectId, projectId))

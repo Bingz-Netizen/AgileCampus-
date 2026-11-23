@@ -64,6 +64,35 @@ export function buildCompletedCard(t: CardTask) {
 
 export type ReminderItem = { id: string; title: string; projectId: string };
 
+// 评审结果卡片：通过=绿，退回=红；带任务名、项目名、评审人、意见
+export function buildReviewCard(input: {
+  passed: boolean;
+  task: CardTask;
+  reviewer: string;
+  opinion: string;
+}) {
+  const t = input.task;
+  return {
+    config: { wide_screen_mode: true },
+    header: {
+      template: input.passed ? "green" : "red",
+      title: { tag: "plain_text", content: input.passed ? "✅ 评审通过" : "↩️ 评审退回" },
+    },
+    elements: [
+      {
+        tag: "div",
+        fields: [
+          field(`**任务**\n${t.title}`, false),
+          field(`**项目**\n${t.projectName}`),
+          field(`**评审人**\n${input.reviewer}`),
+          field(`**${input.passed ? "评审意见" : "退回原因"}**\n${input.opinion}`, false),
+        ],
+      },
+      detailButton(t.projectId, t.id),
+    ],
+  };
+}
+
 export function buildDueReminderCard(input: { overdue: ReminderItem[]; dueSoon: ReminderItem[] }) {
   const line = (i: ReminderItem) => `- [${i.title}](${taskUrl(i.projectId, i.id)})`;
   const elements: unknown[] = [];

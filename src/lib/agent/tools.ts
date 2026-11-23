@@ -1,4 +1,4 @@
-import { tool } from "ai";
+﻿import { tool } from "ai";
 import { z } from "zod";
 import { listMyProjects, listProjectMilestones } from "@/lib/project";
 import { listProjectTasks } from "@/lib/task";
@@ -10,7 +10,7 @@ export async function queryProgress(actorId: string, projectId: string) {
     listProjectMilestones(actorId, projectId),
     listProjectTasks(actorId, projectId),
   ]);
-  const byStatus: Record<TaskStatus, number> = { todo: 0, doing: 0, done: 0 };
+  const byStatus: Record<TaskStatus, number> = { todo: 0, doing: 0, done: 0, review: 0, rejected: 0 };
   for (const t of ts) byStatus[t.status]++;
   return {
     taskTotal: ts.length,

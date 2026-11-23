@@ -9,12 +9,16 @@ import { useViewNav } from "./use-view-nav";
 const STATUS_LABEL: Record<string, string> = {
   todo: "待办",
   doing: "进行中",
+  review: "待评审",
+  rejected: "已退回",
   done: "已完成",
 };
 
 const STATUS_BADGE: Record<string, string> = {
   todo: "bg-todo text-white",
   doing: "bg-doing text-white",
+  review: "bg-medium-soft text-medium",
+  rejected: "bg-high-soft text-high",
   done: "bg-done text-white",
 };
 
@@ -24,7 +28,7 @@ const PRIORITY_BADGE: Record<string, string> = {
   low: "bg-low-soft text-low",
 };
 
-const STATUS_ORDER: Record<string, number> = { doing: 0, todo: 1, done: 2 };
+const STATUS_ORDER: Record<string, number> = { doing: 0, rejected: 1, review: 2, todo: 3, done: 4 };
 const PRIORITY_ORDER: Record<string, number> = { high: 0, medium: 1, low: 2 };
 
 // 列表排序：状态（进行中→待办→已完成）→ 优先级（高→中→低）→ 截止日（早→晚，无截止日置尾）。

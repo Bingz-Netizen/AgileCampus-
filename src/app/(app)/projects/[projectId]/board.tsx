@@ -19,7 +19,7 @@ export type BoardTask = {
   title: string;
   description: string | null;
   completionNote: string | null;
-  status: "todo" | "doing" | "done";
+  status: "todo" | "doing" | "done" | "review" | "rejected";
   priority: string;
   startDate: string | null;
   dueDate: string | null;
@@ -28,6 +28,10 @@ export type BoardTask = {
   milestoneId: string | null;
   labels: { id: string; name: string; color: string }[];
   commentCount: number;
+  kind: "feature" | "bug";
+  bugSeverity: "blocker" | "major" | "minor" | null;
+  bugStatus: "open" | "fixing" | "fixed" | "verified" | null;
+  blocked: boolean;
 };
 
 function Column({
@@ -47,7 +51,7 @@ function Column({
   dependencies: { predecessorId: string; successorId: string }[];
   blockedBy: Record<string, string[]>;
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id: column.key });
+  const { setNodeRef, isOver } = useDroppable({ id: column.key, disabled: column.droppable === false });
 
   return (
     <div
@@ -117,6 +121,12 @@ export function Board({
     const task = optimisticTasks.find((t) => t.id === taskId);
     // 已在目标列则无须提交
     if (!column || !task || column.matches(task)) return;
+
+    // 待评审/已退回两列不可拖入：只能走任务详情里的评审动作
+    if (column.droppable === false) {
+      setError("「待评审 / 已退回」只能通过任务详情的评审操作流转");
+      return;
+    }
 
     // 完成-开始依赖：前置未完成时，后置任务不可拖入「已完成」（仅 status 分组会提交 done 补丁）
     if (column.patch.status === "done" && (blockedBy[taskId]?.length ?? 0) > 0) {

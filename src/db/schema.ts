@@ -15,7 +15,9 @@ import {
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 
-export const teamRoleEnum = pgEnum("team_role", ["admin", "teacher", "student"]);
+// 团队角色：leader（小组长）为第二阶段新增——教师把初审退回与进度盯办下放给小组长，
+// 终审通过（→ 已完成）仍只保留给教师/管理员。
+export const teamRoleEnum = pgEnum("team_role", ["admin", "teacher", "student", "leader"]);
 export type TeamRole = (typeof teamRoleEnum.enumValues)[number];
 
 export const users = pgTable("users", {
@@ -27,6 +29,11 @@ export const users = pgTable("users", {
   feishuOpenId: text("feishu_open_id").unique(),
   feishuName: text("feishu_name"),
   feishuBoundAt: timestamp("feishu_bound_at"),
+  // AI 助手个人配置（BYOK）：key 经 AES-256-GCM 加密存储，密钥派生自 AUTH_SECRET；
+  // baseUrl 与 model 为明文（非敏感），三者同生共死——清 key 即全清。
+  aiApiKeyEnc: text("ai_api_key_enc"),
+  aiBaseUrl: text("ai_base_url"),
+  aiModel: text("ai_model"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
@@ -55,11 +62,24 @@ export const teamMembers = pgTable(
 
 export const projectStatusEnum = pgEnum("project_status", ["active", "archived"]);
 export const milestoneStatusEnum = pgEnum("milestone_status", ["open", "done"]);
-export const taskStatusEnum = pgEnum("task_status", ["todo", "doing", "done"]);
+// 任务状态：第二阶段新增「待评审 / 已退回」两档，流转只允许
+// 进行中 → 待评审 → 已完成 / 已退回 → 待评审（其余跳转一律拒绝）。
+export const taskStatusEnum = pgEnum("task_status", ["todo", "doing", "done", "review", "rejected"]);
 export const taskPriorityEnum = pgEnum("task_priority", ["low", "medium", "high"]);
+// 任务类型：功能任务 / 缺陷卡（最后一周 D2 起全员提缺陷）
+export const taskKindEnum = pgEnum("task_kind", ["feature", "bug"]);
+// 缺陷分级：阻断级 / 重要级 / 优化级（D2 组长统一筛选）
+export const bugSeverityEnum = pgEnum("bug_severity", ["blocker", "major", "minor"]);
+// 缺陷生命周期：待处理 / 处理中 / 已修复 / 验证通过
+export const bugStatusEnum = pgEnum("bug_status", ["open", "fixing", "fixed", "verified"]);
+export const sprintStatusEnum = pgEnum("sprint_status", ["active", "closed"]);
 export type ProjectStatus = (typeof projectStatusEnum.enumValues)[number];
 export type TaskStatus = (typeof taskStatusEnum.enumValues)[number];
 export type TaskPriority = (typeof taskPriorityEnum.enumValues)[number];
+export type TaskKind = (typeof taskKindEnum.enumValues)[number];
+export type BugSeverity = (typeof bugSeverityEnum.enumValues)[number];
+export type BugStatus = (typeof bugStatusEnum.enumValues)[number];
+export type SprintStatus = (typeof sprintStatusEnum.enumValues)[number];
 
 export const projects = pgTable(
   "projects",
@@ -93,6 +113,45 @@ export const milestones = pgTable(
   (t) => [index("milestones_project_idx").on(t.projectId)],
 );
 
+// 迭代（Sprint）：最后一周用于收敛冲刺——任务归入迭代后可在燃尽图上看剩余工作量。
+// 一个项目可建多轮迭代；是否「当前迭代」由 status=active 表达（页面取最新一条 active）。
+export const sprints = pgTable(
+  "sprints",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    goal: text("goal"),
+    startDate: date("start_date"),
+    endDate: date("end_date"),
+    status: sprintStatusEnum("status").notNull().default("active"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("sprints_project_idx").on(t.projectId)],
+);
+
+// 迭代复盘（D7 小组敏捷复盘会留档）：做得好的 / 待改进的 / 踩坑点，按项目留存。
+export const retrospectives = pgTable(
+  "retrospectives",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    sprintId: uuid("sprint_id").references(() => sprints.id, { onDelete: "set null" }),
+    title: text("title").notNull(),
+    wentWell: text("went_well"),
+    wentBad: text("went_bad"),
+    improvements: text("improvements"),
+    pitfalls: text("pitfalls"),
+    createdById: uuid("created_by_id").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("retros_project_idx").on(t.projectId)],
+);
+
 export const tasks = pgTable(
   "tasks",
   {
@@ -119,12 +178,56 @@ export const tasks = pgTable(
     status: taskStatusEnum("status").notNull().default("todo"),
     priority: taskPriorityEnum("priority").notNull().default("medium"),
     sortOrder: doublePrecision("sort_order").notNull().default(0),
+    // ---- 最后一周新增：迭代 / 缺陷卡 / 估时 / 阻塞 ----
+    sprintId: uuid("sprint_id").references(() => sprints.id, { onDelete: "set null" }),
+    kind: taskKindEnum("kind").notNull().default("feature"),
+    // 缺陷卡字段（kind=bug 时使用）：严重级、生命周期状态、被发现的原始任务
+    bugSeverity: bugSeverityEnum("bug_severity"),
+    bugStatus: bugStatusEnum("bug_status"),
+    relatedTaskId: uuid("related_task_id").references((): AnyPgColumn => tasks.id, {
+      onDelete: "set null",
+    }),
+    // 预估工时（小时）：燃尽图按它累计剩余工作量；null=未估，按 0 计
+    estimateHours: doublePrecision("estimate_hours"),
+    // 手工阻塞标记（与「依赖未完成」的自动阻塞互补），附原因便于站会同步
+    blocked: boolean("blocked").notNull().default(false),
+    blockedReason: text("blocked_reason"),
+    // 完成时刻：燃尽图按天取「当天结束时仍剩余的工作量」
+    completedAt: timestamp("completed_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (t) => [
     index("tasks_project_idx").on(t.projectId),
     index("tasks_parent_idx").on(t.parentTaskId),
+    index("tasks_sprint_idx").on(t.sprintId),
+  ],
+);
+
+// 任务的批注 / 评审留痕：普通批注、评审意见、退回意见同表，
+// parentId 支持「回复」形成一条讨论串；评审意见与退回原因由评审动作自动写入，永久留痕。
+export const annotationKindEnum = pgEnum("annotation_kind", ["comment", "review", "reject"]);
+export type AnnotationKind = (typeof annotationKindEnum.enumValues)[number];
+
+export const taskAnnotations = pgTable(
+  "task_annotations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    taskId: uuid("task_id")
+      .notNull()
+      .references(() => tasks.id, { onDelete: "cascade" }),
+    authorId: uuid("author_id").references(() => users.id, { onDelete: "set null" }),
+    // 回复关系：指向同任务下的另一条批注，删父批注时子回复置空（保留内容）
+    parentId: uuid("parent_id").references((): AnyPgColumn => taskAnnotations.id, {
+      onDelete: "set null",
+    }),
+    kind: annotationKindEnum("kind").notNull().default("comment"),
+    content: text("content").notNull(),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("task_annotations_task_idx").on(t.taskId),
+    index("task_annotations_parent_idx").on(t.parentId),
   ],
 );
 
@@ -314,8 +417,8 @@ export const taskActivityTypeEnum = pgEnum("task_activity_type", [
 ]);
 export type TaskActivityType = (typeof taskActivityTypeEnum.enumValues)[number];
 
-// 站内通知类型：目前仅「被 @ 提及」一种
-export const notificationTypeEnum = pgEnum("notification_type", ["mention"]);
+// 站内通知类型：被 @ 提及 / 评审结果
+export const notificationTypeEnum = pgEnum("notification_type", ["mention", "review"]);
 export type NotificationType = (typeof notificationTypeEnum.enumValues)[number];
 
 // 附件以 dataURL 内联存 jsonb（无对象存储；MVP 规模可接受，单文件限 3MB）

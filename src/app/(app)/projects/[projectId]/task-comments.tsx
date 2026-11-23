@@ -1,11 +1,11 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { CommentAttachment } from "@/db/schema";
 
 type Member = { id: string; name: string };
-type ViewerRole = "admin" | "teacher" | "student";
+type ViewerRole = "admin" | "teacher" | "student" | "leader";
 type ImportanceType = "decision" | "issue" | "delivery" | "reference";
 
 type CommentDto = {
@@ -101,7 +101,7 @@ export function TaskDiscussion({
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const nameById = new Map(members.map((m) => [m.id, m.name]));
-  const canMark = viewerRole === "admin" || viewerRole === "teacher";
+  const canMark = viewerRole === "admin" || viewerRole === "teacher" || viewerRole === "leader";
 
   useEffect(() => {
     let cancelled = false;

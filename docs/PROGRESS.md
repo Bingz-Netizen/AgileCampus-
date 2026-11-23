@@ -7,14 +7,14 @@
 
 ## 一句话现状
 
-**十期全部落地，无「未开始」「部分完成」项。** 代码 6,576 行（30 个 `.tsx` + 50 个 `.ts`），测试 30 个文件 / 226 个用例实跑全绿。真正的欠账不在功能，而在三处：**部分模块有代码却零自动化测试、若干文档数字滞后于代码、飞书与真实模型的链路从未真机验收**。
+**十期全部落地，无「未开始」「部分完成」项。** 代码 6,576 行（30 个 `.tsx` + 50 个 `.ts`），测试 32 个文件 / 260 个用例实跑全绿。真正的欠账不在功能，而在三处：**部分模块有代码却零自动化测试、若干文档数字滞后于代码、飞书与真实模型的链路从未真机验收**。
 
 ## 测试实跑
 
 ```
-Test Files  29 passed | 1 skipped (30)
-     Tests  224 passed | 2 skipped (226)
-  Duration  199.64s                              exit code 0
+Test Files  31 passed | 1 skipped (32)
+     Tests  258 passed | 2 skipped (260)
+  Duration  252.33s                              exit code 0
 ```
 
 跳过者为 `tests/agent-live.test.ts`——DeepSeek 真打，以 `describe.skipIf(!process.env.DEEPSEEK_API_KEY)` 自守，无密钥时整阵自动跳过，属设计内行为，非失败。
@@ -40,7 +40,15 @@ Test Files  29 passed | 1 skipped (30)
 
 ---
 
-## 缺口清单
+## 十期之外的新增量
+
+| 增量 | 内容 | 状态 | 用例 |
+|---|---|---|---|
+| AI 个人配置（BYOK） | 「设置 → AI 助手」用户自填 API Key / 服务地址 / 模型名（OpenAI 兼容接口），个人配置优先、回落服务器 `.env`；key 经 AES-256-GCM 加密落库（`src/lib/crypto.ts`），页面只回显尾号 4 位 | 已完成 | 13 |
+
+模型解析入口 `src/lib/agent/model.ts` 的 `getModel(actorId)` 已改异步；缺 key 时向用户明示去设置页填写，不再只回笼统「对话失败」。
+
+
 
 ### 一、有代码、零自动化测试（回归风险）
 
@@ -67,7 +75,7 @@ Test Files  29 passed | 1 skipped (30)
 | 飞书客户端内 JSSDK 免登 | 真机飞书客户端 |
 | 飞书卡片 / 私信投递 | 真实应用 + 已绑定成员 |
 | cron 定时提醒实打 | 宿主 crontab + `CRON_SECRET` |
-| DeepSeek「拆任务 → 确认 → 落库」 | `DEEPSEEK_API_KEY`；且 live 测试仅断言草案非空，**从不调 `/api/chat/commit` 真落库** |
+| DeepSeek「拆任务 → 确认 → 落库」 | 用户可自带 Key（设置 → AI 助手）后无需服务器 key；但整链路仍未真机走通，live 测试仅断言草案非空，**从不调 `/api/chat/commit` 真落库** |
 | 浏览器端到端（拖拽落库、筛选刷新保持、`?task=` 深链） | 无 e2e 工具，仓库无 Playwright |
 
 ---

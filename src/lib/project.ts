@@ -1,4 +1,4 @@
-import { desc, eq, inArray, sql } from "drizzle-orm";
+﻿import { desc, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   milestones,
@@ -90,7 +90,7 @@ export async function getProjectDetail(actorId: string, projectId: string) {
       .groupBy(tasks.status),
   ]);
 
-  const byStatus = { todo: 0, doing: 0, done: 0 };
+  const byStatus = { todo: 0, doing: 0, done: 0, review: 0, rejected: 0 };
   for (const c of counts) byStatus[c.status] = c.count;
 
   return {

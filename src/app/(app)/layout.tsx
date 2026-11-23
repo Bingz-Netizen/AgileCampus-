@@ -12,7 +12,7 @@ export default async function AppLayout({
   const session = await auth();
   if (!session?.user) redirect("/login");
   const unread = await countUnreadNotifications(session.user.id);
-  // 工作台入口仅教师/管理员可见（学生手输 URL 进入也只会看到本人口径，见 workbench/page.tsx）
+  // 项目进度入口仅教师/管理员可见（学生手输 URL 进入也只看到本人口径，见 workbench/page.tsx）
   const isTeacher = await hasTeacherRoleAnywhere(session.user.id);
 
   return (
@@ -34,7 +34,7 @@ export default async function AppLayout({
                 href="/workbench"
                 className="rounded-field px-2.5 py-1.5 text-sm text-ink-soft transition-colors hover:bg-primary-soft hover:text-primary"
               >
-                工作台
+                项目进度
               </Link>
             )}
             <Link

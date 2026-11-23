@@ -4,6 +4,7 @@ import { users } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { hashPassword } from "./password";
 import { exchangeOAuthCode } from "./feishu";
+import { encryptSecret, decryptSecret } from "./crypto";
 import { AppError, isUniqueViolation } from "./errors";
 
 export async function createUser(input: {
@@ -92,4 +93,47 @@ export async function findOrCreateByFeishu(input: { openId: string; name: string
 export async function loginWithFeishuCode(code: string) {
   const { openId, name } = await exchangeOAuthCode(code);
   return findOrCreateByFeishu({ openId, name });
+}
+
+// ---- AI 助手个人配置（BYOK）----
+// 用户自填 OpenAI 兼容接口的 API Key / 服务地址 / 模型名，仅本人请求生效；
+// 未配置者回落服务器 .env 的 DEEPSEEK_*。key 加密落库，服务地址与模型名明文。
+
+export interface UserAiConfig {
+  apiKey: string;
+  baseUrl: string | null;
+  model: string | null;
+}
+
+export async function setUserAiConfig(
+  userId: string,
+  input: { apiKey: string; baseUrl: string; model: string },
+): Promise<void> {
+  const apiKey = input.apiKey.trim();
+  if (!apiKey) {
+    // 空 key = 清除个人配置（三个字段同生共死），回落服务器配置
+    await db
+      .update(users)
+      .set({ aiApiKeyEnc: null, aiBaseUrl: null, aiModel: null })
+      .where(eq(users.id, userId));
+    return;
+  }
+  const aiApiKeyEnc = encryptSecret(apiKey);
+  const aiBaseUrl = input.baseUrl.trim() || null;
+  const aiModel = input.model.trim() || null;
+  await db
+    .update(users)
+    .set({ aiApiKeyEnc, aiBaseUrl, aiModel })
+    .where(eq(users.id, userId));
+}
+
+export async function getUserAiConfig(userId: string): Promise<UserAiConfig | null> {
+  const [row] = await db
+    .select({ aiApiKeyEnc: users.aiApiKeyEnc, aiBaseUrl: users.aiBaseUrl, aiModel: users.aiModel })
+    .from(users)
+    .where(eq(users.id, userId));
+  if (!row?.aiApiKeyEnc) return null;
+  const apiKey = decryptSecret(row.aiApiKeyEnc);
+  if (!apiKey) return null; // 解密失败（如 AUTH_SECRET 轮换）按未配置处理
+  return { apiKey, baseUrl: row.aiBaseUrl, model: row.aiModel };
 }

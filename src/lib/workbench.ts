@@ -1,4 +1,4 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+﻿import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   milestones,
@@ -9,11 +9,12 @@ import {
   teams,
 } from "@/db/schema";
 
-// 工作台聚合：教师总览（多项目进度/风险/逾期）+ 学生/教师双视图口径（文档第 1、3 项）。
+// 项目进度聚合：教师总览（多项目进度/风险/逾期）+ 学生/教师双口径（文档第 1、3 项）。
+// 口径由调用方按团队角色决定（教师看全团队，学生只看本人），页面不再提供手动切换。
 // 口径与 member-load.ts 一致：逾期 = 未完成且截止 < today；时钟不进本模块，today 由调用方传入，便于单测。
 
 // 教师判定：团队内 admin / teacher 视为教师
-const TEACHER_ROLES = ["admin", "teacher"] as const;
+const TEACHER_ROLES = ["admin", "teacher", "leader"] as const;
 
 export type RiskLevel = "high" | "medium" | "low";
 
@@ -252,7 +253,7 @@ export async function getWorkbenchOverview(
   return { teams: [...byTeam.values()], totals };
 }
 
-// 布局导航用：用户是否在任意团队拥有教师/管理员角色（决定「工作台」入口是否渲染）。
+// 布局导航用：用户是否在任意团队拥有教师/管理员角色（决定「项目进度」入口是否渲染）。
 // 学生即使手输 URL 进入 /workbench，页面仍按学生口径渲染，不泄露全量数据。
 export async function hasTeacherRoleAnywhere(userId: string): Promise<boolean> {
   const [row] = await db

@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "vitest";
+﻿import { describe, it, expect, beforeEach } from "vitest";
 import { createUser } from "@/lib/user";
 import { createTeam, joinTeam } from "@/lib/team";
 import { createProject } from "@/lib/project";
@@ -128,7 +128,7 @@ describe("GET /api/agent/projects/:projectId", () => {
     expect(body.name).toBe("赤壁演习");
     expect(body.myRole).toBe("admin");
     expect(body.taskTotal).toBe(1);
-    expect(body.byStatus).toEqual({ todo: 1, doing: 0, done: 0 });
+    expect(body.byStatus).toEqual({ todo: 1, doing: 0, done: 0, review: 0, rejected: 0 });
   });
 
   it("非成员 → 403", async () => {

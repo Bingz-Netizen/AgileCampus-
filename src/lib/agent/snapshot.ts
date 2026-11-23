@@ -1,4 +1,4 @@
-import { getProjectForUser, listProjectMilestones } from "@/lib/project";
+﻿import { getProjectForUser, listProjectMilestones } from "@/lib/project";
 import { listProjectTasks } from "@/lib/task";
 import { listTeamMembers } from "@/lib/team";
 import { ForbiddenError } from "@/lib/errors";
@@ -21,7 +21,7 @@ export async function buildProjectSnapshot(actorId: string, projectId: string): 
     listTeamMembers(project.teamId),
   ]);
 
-  const byStatus: Record<TaskStatus, number> = { todo: 0, doing: 0, done: 0 };
+  const byStatus: Record<TaskStatus, number> = { todo: 0, doing: 0, done: 0, review: 0, rejected: 0 };
   for (const t of tasks) byStatus[t.status]++;
 
   // 当日日期：模型不知今夕何夕，缺此则「下周五截止」一类相对日期必错。

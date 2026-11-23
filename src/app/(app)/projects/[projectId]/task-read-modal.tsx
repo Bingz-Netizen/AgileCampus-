@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect } from "react";
 import type { BoardTask } from "./board";
@@ -22,7 +22,7 @@ export function TaskReadModal({
 }: {
   task: BoardTask;
   viewerId: string;
-  viewerRole: "admin" | "teacher" | "student";
+  viewerRole: "admin" | "teacher" | "student" | "leader";
   members: { id: string; name: string }[];
   onClose: () => void;
 }) {

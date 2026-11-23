@@ -55,7 +55,7 @@ export async function runAgentTurn(params: {
   const tools = buildTools(actorId, projectId);
 
   const result = await generateText({
-    model: model ?? getModel(),
+    model: model ?? (await getModel(actorId)),
     system: `${SYSTEM_PREAMBLE}\n\n${snapshot}`,
     tools,
     stopWhen: stepCountIs(5),
