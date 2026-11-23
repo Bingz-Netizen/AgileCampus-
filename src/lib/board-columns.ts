@@ -1,11 +1,12 @@
 import type { FilterableTask, GroupBy } from "./board-filters";
 
-// 拖拽落列时提交的字段补丁。四字段与 moveTaskAction 的白名单严格对应。
+// 拖拽落列时提交的字段补丁。字段与 moveTaskAction 的白名单严格对应。
 export type ColumnPatch = {
   status?: "todo" | "doing" | "done";
   assigneeIds?: string[];
   priority?: "low" | "medium" | "high";
   milestoneId?: string | null;
+  bugStatus?: "open" | "fixing" | "fixed" | "verified" | null;
 };
 
 export type BoardColumn = {
@@ -14,6 +15,8 @@ export type BoardColumn = {
   tone: string; // tailwind 文字色 class
   patch: ColumnPatch;
   matches: (t: FilterableTask) => boolean;
+  // 评审两态不可拖入：只能通过任务详情的评审按钮流转
+  droppable?: boolean;
 };
 
 export type ColumnContext = {
@@ -77,12 +80,35 @@ export function deriveColumns(group: GroupBy, ctx: ColumnContext): BoardColumn[]
         },
       ];
 
+    case "bugStatus":
+      return (
+        [
+          { key: "open", label: "待处理", tone: "text-high" },
+          { key: "fixing", label: "处理中", tone: "text-doing" },
+          { key: "fixed", label: "已修复", tone: "text-primary" },
+          { key: "verified", label: "验证通过", tone: "text-done" },
+          { key: "none", label: "非缺陷", tone: "text-ink-faint" },
+        ] as const
+      ).map((c) => ({
+        key: c.key,
+        label: c.label,
+        tone: c.tone,
+        patch:
+          c.key === "none"
+            ? ({ bugStatus: null } as ColumnPatch)
+            : ({ bugStatus: c.key } as ColumnPatch),
+        matches: (t: FilterableTask) =>
+          c.key === "none" ? t.bugStatus === null : t.bugStatus === c.key,
+      }));
+
     case "status":
     default:
       return (
         [
           { key: "todo", label: "待办", tone: "text-todo" },
           { key: "doing", label: "进行中", tone: "text-doing" },
+          { key: "reviewing", label: "待评审", tone: "text-primary" },
+          { key: "rejected", label: "已退回", tone: "text-high" },
           { key: "done", label: "已完成", tone: "text-done" },
         ] as const
       ).map((c) => ({
@@ -91,6 +117,8 @@ export function deriveColumns(group: GroupBy, ctx: ColumnContext): BoardColumn[]
         tone: c.tone,
         patch: { status: c.key } as ColumnPatch,
         matches: (t: FilterableTask) => t.status === c.key,
+        // 评审两态由评审动作推进，看板不提供拖入
+        droppable: c.key !== "reviewing" && c.key !== "rejected",
       }));
   }
 }

@@ -20,6 +20,10 @@ function LoginForm() {
       <form action={formAction} className="space-y-3">
         <input name="email" type="email" placeholder="邮箱" className="ac-field" />
         <input name="password" type="password" placeholder="密码" className="ac-field" />
+        <label className="flex items-center gap-2 text-sm text-ink-soft">
+          <input type="checkbox" name="remember" value="true" defaultChecked className="accent-accent" />
+          记住我（30 天内免登录）
+        </label>
         {state?.error && <p className="text-sm text-high">{state.error}</p>}
         <button disabled={pending} className="ac-btn w-full">
           {pending ? "登录中…" : "登录"}

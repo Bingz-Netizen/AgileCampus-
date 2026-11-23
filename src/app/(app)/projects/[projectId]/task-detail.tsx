@@ -30,6 +30,15 @@ export type TaskDetailTask = {
   assigneeNames: string | null;
   milestoneId: string | null;
   labels: { id: string; name: string; color: string }[];
+  // 最后一周：迭代 / 缺陷卡 / 估时 / 阻塞
+  sprintId: string | null;
+  kind: "feature" | "bug";
+  bugSeverity: "blocker" | "major" | "minor" | null;
+  bugStatus: "open" | "fixing" | "fixed" | "verified" | null;
+  relatedTaskId: string | null;
+  estimateHours: number | null;
+  blocked: boolean;
+  blockedReason: string | null;
 };
 
 const STATUS_LABEL: Record<string, string> = {
@@ -58,6 +67,7 @@ export function TaskDetail({
   viewerRole,
   members,
   milestones,
+  sprints,
   allTasks,
   allLabels,
   dependencies,
@@ -69,6 +79,7 @@ export function TaskDetail({
   viewerRole: "admin" | "teacher" | "leader" | "student";
   members: Option[];
   milestones: Option[];
+  sprints: Option[];
   allTasks: TaskOption[];
   allLabels: Option[];
   dependencies: { predecessorId: string; successorId: string }[];
@@ -91,6 +102,7 @@ export function TaskDetail({
       viewerRole={viewerRole}
       members={members}
       milestones={milestones}
+      sprints={sprints}
       allTasks={allTasks}
       allLabels={allLabels}
       dependencies={dependencies}
@@ -105,6 +117,7 @@ function EditPanel({
   viewerRole,
   members,
   milestones,
+  sprints,
   allTasks,
   allLabels,
   dependencies,
@@ -115,6 +128,7 @@ function EditPanel({
   viewerRole: "admin" | "teacher" | "leader" | "student";
   members: Option[];
   milestones: Option[];
+  sprints: Option[];
   allTasks: TaskOption[];
   allLabels: Option[];
   dependencies: { predecessorId: string; successorId: string }[];
@@ -218,6 +232,68 @@ function EditPanel({
           </Field>
           <Field label="截止日">
             <input type="date" name="dueDate" defaultValue={task.dueDate ?? ""} className="ac-field text-sm" />
+          </Field>
+        </div>
+
+        {/* 最后一周：类型 / 迭代 / 估时 / 阻塞 / 缺陷字段 */}
+        <div className="grid grid-cols-2 gap-2.5">
+          <Field label="类型">
+            <select name="kind" defaultValue={task.kind} className="ac-field text-sm">
+              <option value="feature">功能任务</option>
+              <option value="bug">缺陷卡</option>
+            </select>
+          </Field>
+          <Field label="迭代">
+            <select name="sprintId" defaultValue={task.sprintId ?? ""} className="ac-field text-sm">
+              <option value="">未排入迭代</option>
+              {sprints.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="预估工时（小时）">
+            <input
+              type="number"
+              name="estimateHours"
+              min="0.5"
+              step="0.5"
+              defaultValue={task.estimateHours ?? ""}
+              className="ac-field text-sm"
+              placeholder="用于燃尽图"
+            />
+          </Field>
+          <Field label="阻塞">
+            <div className="flex items-center gap-2">
+              <label className="flex items-center gap-1 text-sm text-ink-soft">
+                <input type="checkbox" name="blocked" defaultChecked={task.blocked} />
+                标记为阻塞
+              </label>
+              <input
+                name="blockedReason"
+                defaultValue={task.blockedReason ?? ""}
+                className="ac-field text-sm"
+                placeholder="阻塞原因"
+              />
+            </div>
+          </Field>
+          <Field label="缺陷严重级">
+            <select name="bugSeverity" defaultValue={task.bugSeverity ?? ""} className="ac-field text-sm">
+              <option value="">（非缺陷）</option>
+              <option value="blocker">阻断级</option>
+              <option value="major">重要级</option>
+              <option value="minor">优化级</option>
+            </select>
+          </Field>
+          <Field label="缺陷状态">
+            <select name="bugStatus" defaultValue={task.bugStatus ?? ""} className="ac-field text-sm">
+              <option value="">（非缺陷）</option>
+              <option value="open">待处理</option>
+              <option value="fixing">处理中</option>
+              <option value="fixed">已修复</option>
+              <option value="verified">验证通过</option>
+            </select>
           </Field>
         </div>
 

@@ -4,12 +4,16 @@ import type { DbTx } from "@/db";
 import {
   labels,
   milestones,
+  sprints,
   taskAssignees,
   taskDependencies,
   taskLabels,
   tasks,
   teamMembers,
   users,
+  type BugSeverity,
+  type BugStatus,
+  type TaskKind,
   type TaskPriority,
   type TaskStatus,
 } from "@/db/schema";
@@ -60,6 +64,25 @@ async function validateParentTask(projectId: string, parentTaskId: string) {
   if (!p) throw new AppError("父任务不属于该项目");
 }
 
+// 迭代须存在且同项目——防把任务挂到别的项目的迭代上
+async function validateSprint(projectId: string, sprintId: string) {
+  const [s] = await db
+    .select({ id: sprints.id })
+    .from(sprints)
+    .where(and(eq(sprints.id, sprintId), eq(sprints.projectId, projectId)));
+  if (!s) throw new AppError("迭代不属于该项目");
+}
+
+// 缺陷卡关联的原始任务须同项目
+async function validateRelatedTask(projectId: string, relatedTaskId: string, selfId?: string) {
+  if (selfId && relatedTaskId === selfId) throw new AppError("关联任务不能是任务自身");
+  const [t] = await db
+    .select({ id: tasks.id })
+    .from(tasks)
+    .where(and(eq(tasks.id, relatedTaskId), eq(tasks.projectId, projectId)));
+  if (!t) throw new AppError("关联任务不属于该项目");
+}
+
 export async function createTask(
   actorId: string,
   projectId: string,
@@ -72,6 +95,15 @@ export async function createTask(
     milestoneId?: string;
     priority?: TaskPriority;
     parentTaskId?: string;
+    // 最后一周：迭代归属、缺陷卡、估时、阻塞
+    sprintId?: string;
+    kind?: TaskKind;
+    bugSeverity?: BugSeverity;
+    bugStatus?: BugStatus;
+    relatedTaskId?: string;
+    estimateHours?: number;
+    blocked?: boolean;
+    blockedReason?: string;
   },
   opts?: { tx?: DbTx },
 ) {
@@ -95,6 +127,14 @@ export async function createTask(
       parentTaskId: input.parentTaskId,
       priority: input.priority ?? "medium",
       sortOrder: Date.now(),
+      sprintId: input.sprintId,
+      kind: input.kind ?? "feature",
+      bugSeverity: input.kind === "bug" ? (input.bugSeverity ?? null) : null,
+      bugStatus: input.kind === "bug" ? (input.bugStatus ?? "open") : null,
+      relatedTaskId: input.kind === "bug" ? (input.relatedTaskId ?? null) : null,
+      estimateHours: input.estimateHours ?? null,
+      blocked: input.blocked ?? false,
+      blockedReason: input.blocked ? (input.blockedReason?.trim() || null) : null,
     })
     .returning();
 
@@ -123,12 +163,26 @@ export async function updateTask(
     status?: TaskStatus;
     priority?: TaskPriority;
     completionNote?: string | null;
+    // 最后一周：迭代 / 缺陷 / 估时 / 阻塞
+    sprintId?: string | null;
+    kind?: TaskKind;
+    bugSeverity?: BugSeverity | null;
+    bugStatus?: BugStatus | null;
+    relatedTaskId?: string | null;
+    estimateHours?: number | null;
+    blocked?: boolean;
+    blockedReason?: string | null;
   },
   opts?: { tx?: DbTx },
 ) {
   const exec = opts?.tx ?? db;
   const [task] = await exec.select().from(tasks).where(eq(tasks.id, taskId));
   if (!task) throw new AppError("任务不存在");
+
+  // 评审两态只能由评审动作推进，禁止经 updateTask 直接写入
+  if (patch.status === "reviewing" || patch.status === "rejected") {
+    throw new AppError("「待评审 / 已退回」只能通过提交评审、通过评审、退回修改推进");
+  }
 
   const access = await requireTaskWrite(actorId, task.projectId);
   const oldAssigneeIds = (
@@ -140,6 +194,8 @@ export async function updateTask(
   const nextAssigneeIds = patch.assigneeIds === undefined ? oldAssigneeIds : [...new Set(patch.assigneeIds)];
   if (patch.assigneeIds !== undefined) await validateAssignees(access.project.teamId, nextAssigneeIds);
   if (patch.milestoneId) await validateMilestone(task.projectId, patch.milestoneId);
+  if (patch.sprintId) await validateSprint(task.projectId, patch.sprintId);
+  if (patch.relatedTaskId) await validateRelatedTask(task.projectId, patch.relatedTaskId, taskId);
 
   // 完成-开始依赖：标记 done 前校验无未完成的前置任务（后置任务被前置阻断，不得完成）。
   // 仅限「非 done → done」的跃迁，避免已完成任务补保存时被历史前置误拦。
@@ -168,6 +224,22 @@ export async function updateTask(
       ...(patch.status !== undefined && { status: patch.status }),
       ...(patch.priority !== undefined && { priority: patch.priority }),
       ...(patch.completionNote !== undefined && { completionNote: patch.completionNote }),
+      ...(patch.sprintId !== undefined && { sprintId: patch.sprintId }),
+      ...(patch.kind !== undefined && { kind: patch.kind }),
+      // 缺陷字段仅在 kind=bug 时保留；改回功能任务时清空，避免残留脏值
+      ...(patch.kind === "feature" && { bugSeverity: null, bugStatus: null, relatedTaskId: null }),
+      ...(patch.bugSeverity !== undefined && { bugSeverity: patch.bugSeverity }),
+      ...(patch.bugStatus !== undefined && { bugStatus: patch.bugStatus }),
+      ...(patch.relatedTaskId !== undefined && { relatedTaskId: patch.relatedTaskId }),
+      ...(patch.estimateHours !== undefined && { estimateHours: patch.estimateHours }),
+      ...(patch.blocked !== undefined && { blocked: patch.blocked }),
+      ...(patch.blocked !== undefined && !patch.blocked && { blockedReason: null }),
+      ...(patch.blockedReason !== undefined && { blockedReason: patch.blockedReason }),
+      // 完成时刻：燃尽图按它算「某天结束时还剩多少工作量」
+      ...(patch.status === "done" && task.status !== "done" && { completedAt: sql`now()` }),
+      ...(patch.status !== undefined && patch.status !== "done" && task.status === "done" && {
+        completedAt: null,
+      }),
       updatedAt: sql`now()`,
     })
     .where(eq(tasks.id, taskId))
@@ -206,6 +278,39 @@ export async function updateTask(
     if (patch.status === "done" && task.status !== "done") void notifyTaskCompleted(result, actorId);
   }
   return result;
+}
+
+/** 列内排序：与同状态相邻任务交换 sortOrder（看板上的 ↑/↓ 按钮调用） */
+export async function reorderTask(
+  actorId: string,
+  taskId: string,
+  direction: "up" | "down",
+) {
+  const [task] = await db.select().from(tasks).where(eq(tasks.id, taskId));
+  if (!task) throw new AppError("任务不存在");
+  await requireTaskWrite(actorId, task.projectId);
+
+  const siblings = await db
+    .select({ id: tasks.id, sortOrder: tasks.sortOrder })
+    .from(tasks)
+    .where(and(eq(tasks.projectId, task.projectId), eq(tasks.status, task.status)))
+    .orderBy(tasks.sortOrder);
+
+  const index = siblings.findIndex((t) => t.id === taskId);
+  if (index < 0) return;
+  const target = direction === "up" ? index - 1 : index + 1;
+  if (target < 0 || target >= siblings.length) return;
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(tasks)
+      .set({ sortOrder: siblings[target].sortOrder, updatedAt: sql`now()` })
+      .where(eq(tasks.id, siblings[index].id));
+    await tx
+      .update(tasks)
+      .set({ sortOrder: siblings[index].sortOrder, updatedAt: sql`now()` })
+      .where(eq(tasks.id, siblings[target].id));
+  });
 }
 
 export async function deleteTask(actorId: string, taskId: string) {
@@ -292,6 +397,16 @@ export async function listProjectTasks(actorId: string, projectId: string) {
       parentTaskId: tasks.parentTaskId,
       updatedAt: tasks.updatedAt,
       completionNote: tasks.completionNote,
+      // 最后一周新增字段（看板/详情/导出共用）
+      sprintId: tasks.sprintId,
+      kind: tasks.kind,
+      bugSeverity: tasks.bugSeverity,
+      bugStatus: tasks.bugStatus,
+      relatedTaskId: tasks.relatedTaskId,
+      estimateHours: tasks.estimateHours,
+      blocked: tasks.blocked,
+      blockedReason: tasks.blockedReason,
+      completedAt: tasks.completedAt,
     })
     .from(tasks)
     .where(eq(tasks.projectId, projectId))

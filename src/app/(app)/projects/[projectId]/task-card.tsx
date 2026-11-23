@@ -3,6 +3,7 @@
 import { useDraggable } from "@dnd-kit/core";
 import { LABEL_COLOR_CLASS } from "@/lib/board-columns";
 import type { BoardTask } from "./board";
+import { reorderTaskAction } from "./actions";
 import { useFocusHighlight } from "./use-focus";
 import { useViewNav } from "./use-view-nav";
 
@@ -15,6 +16,12 @@ const PRIORITY_BADGE: Record<string, string> = {
   low: "bg-low-soft text-low",
 };
 
+const BUG_SEVERITY_LABEL: Record<string, string> = {
+  blocker: "阻断级",
+  major: "重要级",
+  minor: "优化级",
+};
+
 export function TaskCard({
   task,
   projectId,
@@ -22,6 +29,8 @@ export function TaskCard({
   allTasks,
   dependencies,
   blockedBy,
+  canMoveUp = false,
+  canMoveDown = false,
 }: {
   task: BoardTask;
   projectId: string;
@@ -29,6 +38,8 @@ export function TaskCard({
   allTasks: TaskOption[];
   dependencies: { predecessorId: string; successorId: string }[];
   blockedBy: Record<string, string[]>;
+  canMoveUp?: boolean;
+  canMoveDown?: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: task.id,
@@ -91,6 +102,12 @@ export function TaskCard({
           <span className={`ac-badge ${PRIORITY_BADGE[task.priority] ?? "bg-low-soft text-low"}`}>
             {task.priority}
           </span>
+          {task.kind === "bug" && (
+            <span className="ac-badge bg-high-soft text-high" title="缺陷卡">
+              缺陷 · {BUG_SEVERITY_LABEL[task.bugSeverity ?? "major"] ?? "重要级"}
+            </span>
+          )}
+          {task.blocked && <span className="ac-badge bg-high-soft text-high">阻塞</span>}
         </p>
         {task.labels.length > 0 && (
           <p className="mt-1 flex flex-wrap items-center gap-1">
@@ -135,6 +152,35 @@ export function TaskCard({
         >
           在甘特中查看
         </button>
+
+        {canWrite && (canMoveUp || canMoveDown) && (
+          <span className="inline-flex items-center gap-1">
+            <form action={reorderTaskAction}>
+              <input type="hidden" name="taskId" value={task.id} />
+              <input type="hidden" name="projectId" value={projectId} />
+              <input type="hidden" name="direction" value="up" />
+              <button
+                disabled={!canMoveUp}
+                title="上移一位"
+                className="text-xs text-ink-faint hover:text-primary disabled:opacity-30"
+              >
+                ↑
+              </button>
+            </form>
+            <form action={reorderTaskAction}>
+              <input type="hidden" name="taskId" value={task.id} />
+              <input type="hidden" name="projectId" value={projectId} />
+              <input type="hidden" name="direction" value="down" />
+              <button
+                disabled={!canMoveDown}
+                title="下移一位"
+                className="text-xs text-ink-faint hover:text-primary disabled:opacity-30"
+              >
+                ↓
+              </button>
+            </form>
+          </span>
+        )}
         <span
           title={`${task.commentCount} 条讨论`}
           className="ml-auto inline-flex items-center gap-1 text-xs text-ink-faint"

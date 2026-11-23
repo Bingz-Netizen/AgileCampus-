@@ -65,9 +65,18 @@ export const taskStatusEnum = pgEnum("task_status", [
   "done",
 ]);
 export const taskPriorityEnum = pgEnum("task_priority", ["low", "medium", "high"]);
+// 最后一周收敛新增：任务类型（功能/缺陷）、缺陷分级与生命周期、迭代状态
+export const taskKindEnum = pgEnum("task_kind", ["feature", "bug"]);
+export const bugSeverityEnum = pgEnum("bug_severity", ["blocker", "major", "minor"]);
+export const bugStatusEnum = pgEnum("bug_status", ["open", "fixing", "fixed", "verified"]);
+export const sprintStatusEnum = pgEnum("sprint_status", ["active", "closed"]);
 export type ProjectStatus = (typeof projectStatusEnum.enumValues)[number];
 export type TaskStatus = (typeof taskStatusEnum.enumValues)[number];
 export type TaskPriority = (typeof taskPriorityEnum.enumValues)[number];
+export type TaskKind = (typeof taskKindEnum.enumValues)[number];
+export type BugSeverity = (typeof bugSeverityEnum.enumValues)[number];
+export type BugStatus = (typeof bugStatusEnum.enumValues)[number];
+export type SprintStatus = (typeof sprintStatusEnum.enumValues)[number];
 
 export const projects = pgTable(
   "projects",
@@ -101,6 +110,44 @@ export const milestones = pgTable(
   (t) => [index("milestones_project_idx").on(t.projectId)],
 );
 
+// 迭代（Sprint）：最后一周收敛用——任务归入迭代后，燃尽图按预估工时统计剩余工作量。
+export const sprints = pgTable(
+  "sprints",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    goal: text("goal"),
+    startDate: date("start_date"),
+    endDate: date("end_date"),
+    status: sprintStatusEnum("status").notNull().default("active"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("sprints_project_idx").on(t.projectId)],
+);
+
+// 迭代复盘（D7 小组复盘会留档）：做得好的 / 待改进 / 改进措施 / 踩坑点。
+export const retrospectives = pgTable(
+  "retrospectives",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    projectId: uuid("project_id")
+      .notNull()
+      .references(() => projects.id, { onDelete: "cascade" }),
+    sprintId: uuid("sprint_id").references(() => sprints.id, { onDelete: "set null" }),
+    title: text("title").notNull(),
+    wentWell: text("went_well"),
+    wentBad: text("went_bad"),
+    improvements: text("improvements"),
+    pitfalls: text("pitfalls"),
+    createdById: uuid("created_by_id").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [index("retros_project_idx").on(t.projectId)],
+);
+
 export const tasks = pgTable(
   "tasks",
   {
@@ -127,12 +174,25 @@ export const tasks = pgTable(
     status: taskStatusEnum("status").notNull().default("todo"),
     priority: taskPriorityEnum("priority").notNull().default("medium"),
     sortOrder: doublePrecision("sort_order").notNull().default(0),
+    // ---- 最后一周收敛新增：迭代 / 缺陷卡 / 估时 / 阻塞 / 完成时刻 ----
+    sprintId: uuid("sprint_id").references(() => sprints.id, { onDelete: "set null" }),
+    kind: taskKindEnum("kind").notNull().default("feature"),
+    bugSeverity: bugSeverityEnum("bug_severity"),
+    bugStatus: bugStatusEnum("bug_status"),
+    relatedTaskId: uuid("related_task_id").references((): AnyPgColumn => tasks.id, {
+      onDelete: "set null",
+    }),
+    estimateHours: doublePrecision("estimate_hours"),
+    blocked: boolean("blocked").notNull().default(false),
+    blockedReason: text("blocked_reason"),
+    completedAt: timestamp("completed_at"),
     createdAt: timestamp("created_at").notNull().defaultNow(),
     updatedAt: timestamp("updated_at").notNull().defaultNow(),
   },
   (t) => [
     index("tasks_project_idx").on(t.projectId),
     index("tasks_parent_idx").on(t.parentTaskId),
+    index("tasks_sprint_idx").on(t.sprintId),
   ],
 );
 

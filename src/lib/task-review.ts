@@ -112,7 +112,12 @@ async function transition(
 
   const [updated] = await db
     .update(tasks)
-    .set({ status: to, updatedAt: sql`now()` })
+    .set({
+      status: to,
+      // 燃尽图按 completedAt 统计「当天结束时仍剩余的工作量」
+      completedAt: to === "done" ? sql`now()` : null,
+      updatedAt: sql`now()`,
+    })
     .where(and(eq(tasks.id, task.id), eq(tasks.status, task.status)))
     .returning();
   if (!updated) throw new AppError("任务状态已变化，请刷新后重试");

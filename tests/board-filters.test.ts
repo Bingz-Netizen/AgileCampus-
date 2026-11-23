@@ -20,6 +20,8 @@ function task(over: Partial<FilterableTask> = {}): FilterableTask {
     milestoneId: null,
     dueDate: null,
     status: "todo",
+    kind: "feature",
+    bugStatus: null,
     labels: [],
     ...over,
   };
@@ -134,12 +136,21 @@ describe("deriveColumns", () => {
     milestones: [{ id: M, name: "一期" }],
   };
 
-  it("按状态分组：三列，patch 改 status", () => {
+  it("按状态分组：五列（含评审两态），patch 改 status", () => {
     const cols = deriveColumns("status", ctx);
-    expect(cols.map((c) => c.key)).toEqual(["todo", "doing", "done"]);
+    expect(cols.map((c) => c.key)).toEqual(["todo", "doing", "reviewing", "rejected", "done"]);
+    // 评审两态只能通过评审动作流转，不可拖入
+    expect(cols[2].droppable).toBe(false);
+    expect(cols[3].droppable).toBe(false);
     expect(cols[1].patch).toEqual({ status: "doing" });
     expect(cols[1].matches(task({ status: "doing" }))).toBe(true);
     expect(cols[1].matches(task({ status: "todo" }))).toBe(false);
+  });
+
+  it("按缺陷状态分组：四态 + 非缺陷列", () => {
+    const cols = deriveColumns("bugStatus", ctx);
+    expect(cols.map((c) => c.key)).toEqual(["open", "fixing", "fixed", "verified", "none"]);
+    expect(cols[4].matches(task({ bugStatus: null }))).toBe(true);
   });
 
   it("按指派人分组：每成员一列 + 未指派列，patch 改 assigneeIds", () => {

@@ -12,6 +12,7 @@ import { countProjectTaskComments } from "@/lib/comment";
 import { listTeamLabels } from "@/lib/label";
 import { parseFilters, applyFilters } from "@/lib/board-filters";
 import { computeMemberLoad } from "@/lib/member-load";
+import { listSprintOptions } from "@/lib/sprint";
 import { parseView } from "./view-nav";
 import { MilestoneSection } from "./milestone-section";
 import { NewTaskForm } from "./new-task-form";
@@ -42,7 +43,7 @@ export default async function ProjectPage({
   if (!access) notFound();
   const { project, role } = access;
 
-  const [projectMilestones, projectTasks, members, dependencies, teamLabels, commentCounts] =
+  const [projectMilestones, projectTasks, members, dependencies, teamLabels, commentCounts, sprintOptions] =
     await Promise.all([
       listProjectMilestones(session.user.id, projectId),
       listProjectTasks(session.user.id, projectId),
@@ -50,6 +51,7 @@ export default async function ProjectPage({
       listProjectDependencies(session.user.id, projectId),
       listTeamLabels(session.user.id, project.teamId),
       countProjectTaskComments(session.user.id, projectId),
+      listSprintOptions(session.user.id, projectId),
     ]);
 
   const filters = parseFilters(
@@ -85,6 +87,11 @@ export default async function ProjectPage({
     milestoneId: t.milestoneId,
     labels: t.labels,
     commentCount: commentCounts[t.id] ?? 0,
+    kind: t.kind,
+    bugSeverity: t.bugSeverity,
+    bugStatus: t.bugStatus,
+    blocked: t.blocked,
+    sortOrder: t.sortOrder,
   }));
   // 甘特需全量字段：任务树(parentTaskId)、负责人缩写、依赖/阻断、详情弹窗(description 等)
   const ganttTasks = visibleTasks.map((t) => ({
@@ -134,6 +141,14 @@ export default async function ProjectPage({
       assigneeNames: selectedRaw.assigneeNames,
       milestoneId: selectedRaw.milestoneId,
       labels: selectedRaw.labels,
+      sprintId: selectedRaw.sprintId,
+      kind: selectedRaw.kind,
+      bugSeverity: selectedRaw.bugSeverity,
+      bugStatus: selectedRaw.bugStatus,
+      relatedTaskId: selectedRaw.relatedTaskId,
+      estimateHours: selectedRaw.estimateHours,
+      blocked: selectedRaw.blocked,
+      blockedReason: selectedRaw.blockedReason,
     };
     // 返回项目：仅移除 task/focus，保留 view 与筛选
     const back = new URLSearchParams();
@@ -162,6 +177,7 @@ export default async function ProjectPage({
           viewerRole={role}
           members={members.map((m) => ({ id: m.id, name: m.name }))}
           milestones={projectMilestones.map((m) => ({ id: m.id, name: m.title }))}
+          sprints={sprintOptions.map((s) => ({ id: s.id, name: s.name }))}
           allTasks={projectTasks.map((t) => ({ id: t.id, title: t.title }))}
           allLabels={teamLabels.map((l) => ({ id: l.id, name: l.name }))}
           dependencies={dependencies}
@@ -204,10 +220,23 @@ export default async function ProjectPage({
           >
             项目档案
           </Link>
+          {" · "}
+          <Link href={`/projects/${projectId}/sprints`} className="text-primary hover:underline">
+            迭代与燃尽
+          </Link>
+          {" · "}
+          <Link
+            href={`/projects/${projectId}/retrospectives`}
+            className="text-primary hover:underline"
+          >
+            复盘
+          </Link>
+          {" · "}
+          <a href={`/api/projects/${projectId}/export`} className="text-primary hover:underline">
+            导出 CSV
+          </a>
         </p>
       </header>
-
-      <MemberLoadView projectId={projectId} members={memberLoads} today={today} />
 
       <ViewTabs projectId={projectId} view={view} />
 
@@ -259,6 +288,9 @@ export default async function ProjectPage({
         )}
       </section>
 
+      {/* 成员负载下沉到任务区之后：首屏优先露出任务本身 */}
+      <MemberLoadView projectId={projectId} members={memberLoads} today={today} />
+
       <ChatPanel
         projectId={projectId}
         initialMessages={initialMessages}
@@ -271,6 +303,7 @@ export default async function ProjectPage({
           projectId={projectId}
           members={members}
           milestones={projectMilestones.map((m) => ({ id: m.id, title: m.title }))}
+          sprints={sprintOptions.map((s) => ({ id: s.id, name: s.name }))}
         />
       )}
     </main>

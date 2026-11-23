@@ -28,6 +28,11 @@ export type BoardTask = {
   milestoneId: string | null;
   labels: { id: string; name: string; color: string }[];
   commentCount: number;
+  kind: "feature" | "bug";
+  bugSeverity: "blocker" | "major" | "minor" | null;
+  bugStatus: "open" | "fixing" | "fixed" | "verified" | null;
+  blocked: boolean;
+  sortOrder: number;
 };
 
 function Column({
@@ -47,7 +52,9 @@ function Column({
   dependencies: { predecessorId: string; successorId: string }[];
   blockedBy: Record<string, string[]>;
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id: column.key });
+  const { setNodeRef, isOver } = useDroppable({ id: column.key, disabled: column.droppable === false });
+  // 列内顺序沿用 sortOrder（拖拽排序按钮会交换相邻任务的 sortOrder）
+  const ordered = [...tasks].sort((a, b) => a.sortOrder - b.sortOrder);
 
   return (
     <div
@@ -60,7 +67,7 @@ function Column({
         {column.label}
         <span className="ac-badge bg-surface text-ink-soft">{tasks.length}</span>
       </h3>
-      {tasks.map((t) => (
+      {ordered.map((t, i) => (
         <TaskCard
           key={t.id}
           task={t}
@@ -69,6 +76,8 @@ function Column({
           allTasks={allTasks}
           dependencies={dependencies}
           blockedBy={blockedBy}
+          canMoveUp={i > 0}
+          canMoveDown={i < ordered.length - 1}
         />
       ))}
     </div>
@@ -117,6 +126,12 @@ export function Board({
     const task = optimisticTasks.find((t) => t.id === taskId);
     // 已在目标列则无须提交
     if (!column || !task || column.matches(task)) return;
+
+    // 评审两态不可拖入：只能走任务详情里的评审动作
+    if (column.droppable === false) {
+      setError("「待评审 / 已退回」只能通过任务详情的评审操作流转");
+      return;
+    }
 
     // 完成-开始依赖：前置未完成时，后置任务不可拖入「已完成」（仅 status 分组会提交 done 补丁）
     if (column.patch.status === "done" && (blockedBy[taskId]?.length ?? 0) > 0) {
