@@ -36,7 +36,7 @@ export async function createProject(
 }
 
 export async function listTeamProjects(actorId: string, teamId: string) {
-  await requireTeamRole(actorId, teamId, ["admin", "teacher", "student"]);
+  await requireTeamRole(actorId, teamId, ["admin", "teacher", "leader", "student"]);
   return db
     .select()
     .from(projects)
@@ -90,14 +90,20 @@ export async function getProjectDetail(actorId: string, projectId: string) {
       .groupBy(tasks.status),
   ]);
 
-  const byStatus = { todo: 0, doing: 0, done: 0 };
+  const byStatus: Record<string, number> = {
+    todo: 0,
+    doing: 0,
+    reviewing: 0,
+    rejected: 0,
+    done: 0,
+  };
   for (const c of counts) byStatus[c.status] = c.count;
 
   return {
     project: access.project,
     role: access.role,
     milestones: projectMilestones,
-    taskTotal: byStatus.todo + byStatus.doing + byStatus.done,
+    taskTotal: Object.values(byStatus).reduce((a, b) => a + b, 0),
     byStatus,
   };
 }

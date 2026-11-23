@@ -12,8 +12,8 @@ import {
 // 工作台聚合：教师总览（多项目进度/风险/逾期）+ 学生/教师双视图口径（文档第 1、3 项）。
 // 口径与 member-load.ts 一致：逾期 = 未完成且截止 < today；时钟不进本模块，today 由调用方传入，便于单测。
 
-// 教师判定：团队内 admin / teacher 视为教师
-const TEACHER_ROLES = ["admin", "teacher"] as const;
+// 教师判定：团队内 admin / teacher / leader（小组长）均可进工作台看全量口径
+const TEACHER_ROLES = ["admin", "teacher", "leader"] as const;
 
 export type RiskLevel = "high" | "medium" | "low";
 
@@ -39,7 +39,7 @@ export type WorkbenchProject = {
 export type WorkbenchTeam = {
   teamId: string;
   teamName: string;
-  isTeacher: boolean; // 当前用户在该团队是否 admin/teacher
+  isTeacher: boolean; // 当前用户在该团队是否 admin/teacher/leader（可看全组口径）
   projects: WorkbenchProject[];
 };
 

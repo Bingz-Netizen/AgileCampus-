@@ -4,10 +4,18 @@ import { useEffect } from "react";
 import type { BoardTask } from "./board";
 import { TaskDiscussion } from "./task-comments";
 
-const STATUS_LABEL: Record<string, string> = { todo: "待办", doing: "进行中", done: "已完成" };
+const STATUS_LABEL: Record<string, string> = {
+  todo: "待办",
+  doing: "进行中",
+  reviewing: "待评审",
+  rejected: "已退回",
+  done: "已完成",
+};
 const STATUS_BADGE: Record<string, string> = {
   todo: "bg-todo text-white",
   doing: "bg-doing text-white",
+  reviewing: "bg-primary text-white",
+  rejected: "bg-high text-white",
   done: "bg-done text-white",
 };
 const PRIORITY_LABEL: Record<string, string> = { high: "高", medium: "中", low: "低" };
@@ -22,7 +30,7 @@ export function TaskReadModal({
 }: {
   task: BoardTask;
   viewerId: string;
-  viewerRole: "admin" | "teacher" | "student";
+  viewerRole: "admin" | "teacher" | "leader" | "student";
   members: { id: string; name: string }[];
   onClose: () => void;
 }) {

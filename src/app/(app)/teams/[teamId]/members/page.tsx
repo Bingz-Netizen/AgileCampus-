@@ -51,6 +51,7 @@ export default async function MembersPage({
                 <select key={m.role} name="role" defaultValue={m.role} className="ac-field w-auto py-1 text-sm">
                   <option value="admin">admin</option>
                   <option value="teacher">teacher</option>
+                  <option value="leader">leader</option>
                   <option value="student">student</option>
                 </select>
                 <button className="ac-btn px-2 py-1 text-xs">保存</button>

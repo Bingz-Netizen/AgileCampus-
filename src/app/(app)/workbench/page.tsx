@@ -204,7 +204,7 @@ export default async function WorkbenchPage({ searchParams }: Props) {
                         : "ac-badge bg-low-soft text-low"
                     }
                   >
-                    {t.isTeacher ? "教师视角" : "学生视角"}
+                    {t.isTeacher ? "全组视角" : "学生视角"}
                   </span>
                 </div>
                 <span className="text-xs tabular-nums text-ink-soft">

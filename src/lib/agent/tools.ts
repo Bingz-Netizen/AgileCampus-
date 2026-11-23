@@ -10,7 +10,13 @@ export async function queryProgress(actorId: string, projectId: string) {
     listProjectMilestones(actorId, projectId),
     listProjectTasks(actorId, projectId),
   ]);
-  const byStatus: Record<TaskStatus, number> = { todo: 0, doing: 0, done: 0 };
+  const byStatus: Record<TaskStatus, number> = {
+    todo: 0,
+    doing: 0,
+    reviewing: 0,
+    rejected: 0,
+    done: 0,
+  };
   for (const t of ts) byStatus[t.status]++;
   return {
     taskTotal: ts.length,

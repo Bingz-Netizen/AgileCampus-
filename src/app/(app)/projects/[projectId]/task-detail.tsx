@@ -12,6 +12,7 @@ import {
 } from "./actions";
 import { TaskDiscussion } from "./task-comments";
 import { MemberPicker } from "./member-picker";
+import { TaskReviewPanel } from "./task-review-panel";
 
 type Option = { id: string; name: string };
 type TaskOption = { id: string; title: string };
@@ -21,7 +22,7 @@ export type TaskDetailTask = {
   title: string;
   description: string | null;
   completionNote: string | null;
-  status: "todo" | "doing" | "done";
+  status: "todo" | "doing" | "reviewing" | "rejected" | "done";
   priority: string;
   startDate: string | null;
   dueDate: string | null;
@@ -31,10 +32,18 @@ export type TaskDetailTask = {
   labels: { id: string; name: string; color: string }[];
 };
 
-const STATUS_LABEL: Record<string, string> = { todo: "待办", doing: "进行中", done: "已完成" };
+const STATUS_LABEL: Record<string, string> = {
+  todo: "待办",
+  doing: "进行中",
+  reviewing: "待评审",
+  rejected: "已退回",
+  done: "已完成",
+};
 const STATUS_BADGE: Record<string, string> = {
   todo: "bg-todo text-white",
   doing: "bg-doing text-white",
+  reviewing: "bg-primary text-white",
+  rejected: "bg-high text-white",
   done: "bg-done text-white",
 };
 const PRIORITY_LABEL: Record<string, string> = { high: "高", medium: "中", low: "低" };
@@ -57,7 +66,7 @@ export function TaskDetail({
   task: TaskDetailTask;
   canWrite: boolean;
   viewerId: string;
-  viewerRole: "admin" | "teacher" | "student";
+  viewerRole: "admin" | "teacher" | "leader" | "student";
   members: Option[];
   milestones: Option[];
   allTasks: TaskOption[];
@@ -65,7 +74,15 @@ export function TaskDetail({
   dependencies: { predecessorId: string; successorId: string }[];
 }) {
   if (!canWrite)
-    return <ReadPanel task={task} viewerId={viewerId} viewerRole={viewerRole} members={members} />;
+    return (
+      <ReadPanel
+        projectId={projectId}
+        task={task}
+        viewerId={viewerId}
+        viewerRole={viewerRole}
+        members={members}
+      />
+    );
   return (
     <EditPanel
       projectId={projectId}
@@ -95,7 +112,7 @@ function EditPanel({
   projectId: string;
   task: TaskDetailTask;
   viewerId: string;
-  viewerRole: "admin" | "teacher" | "student";
+  viewerRole: "admin" | "teacher" | "leader" | "student";
   members: Option[];
   milestones: Option[];
   allTasks: TaskOption[];
@@ -303,6 +320,14 @@ function EditPanel({
         </button>
       </form>
 
+      <TaskReviewPanel
+        projectId={projectId}
+        taskId={task.id}
+        status={task.status}
+        viewerId={viewerId}
+        viewerRole={viewerRole}
+        assigneeIds={task.assigneeIds}
+      />
       <TaskDiscussion taskId={task.id} viewerId={viewerId} viewerRole={viewerRole} members={members} />
     </div>
   );
@@ -310,14 +335,16 @@ function EditPanel({
 
 // 只读任务详情：teacher 等只读成员查看任务字段并参与讨论（无编辑/依赖/删除入口）。
 function ReadPanel({
+  projectId,
   task,
   viewerId,
   viewerRole,
   members,
 }: {
+  projectId: string;
   task: TaskDetailTask;
   viewerId: string;
-  viewerRole: "admin" | "teacher" | "student";
+  viewerRole: "admin" | "teacher" | "leader" | "student";
   members: Option[];
 }) {
   return (
@@ -346,6 +373,14 @@ function ReadPanel({
       )}
 
       <div className="mt-3">
+        <TaskReviewPanel
+          projectId={projectId}
+          taskId={task.id}
+          status={task.status}
+          viewerId={viewerId}
+          viewerRole={viewerRole}
+          assigneeIds={task.assigneeIds}
+        />
         <TaskDiscussion taskId={task.id} viewerId={viewerId} viewerRole={viewerRole} members={members} />
       </div>
     </div>

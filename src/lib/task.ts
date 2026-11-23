@@ -18,8 +18,8 @@ import { getProjectForUser } from "./project";
 import { notifyTaskAssigned, notifyTaskCompleted } from "./notify";
 import { recordTaskActivity } from "./activity";
 
-// 任务写操作角色：admin + student（teacher 只读，设计文档 §5）
-const TASK_WRITE_ROLES = ["admin", "student"];
+// 任务写操作角色：admin + student + leader（leader 为 student 能力超集，见 schema 注释）
+const TASK_WRITE_ROLES = ["admin", "student", "leader"];
 
 async function requireProjectAccess(actorId: string, projectId: string) {
   const access = await getProjectForUser(actorId, projectId);

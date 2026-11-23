@@ -22,7 +22,7 @@ type GanttTask = {
   title: string;
   description: string | null;
   completionNote: string | null;
-  status: "todo" | "doing" | "done";
+  status: "todo" | "doing" | "reviewing" | "rejected" | "done";
   priority: string;
   startDate: string | null;
   dueDate: string | null;
@@ -46,11 +46,15 @@ type Row =
 const STATUS_BAR: Record<string, string> = {
   todo: "bg-todo",
   doing: "bg-doing",
+  reviewing: "bg-primary",
+  rejected: "bg-high",
   done: "bg-done",
 };
 const STATUS_LABEL: Record<string, string> = {
   todo: "待办",
   doing: "进行中",
+  reviewing: "待评审",
+  rejected: "已退回",
   done: "已完成",
 };
 

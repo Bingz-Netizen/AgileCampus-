@@ -128,3 +128,76 @@ export async function scanAndNotifyDue(): Promise<{ notified: number; tasksScann
   }
   return { notified, tasksScanned: rows.length };
 }
+
+// ---- 批注评审（第二阶段）：评审结果通知任务负责人 ----
+
+// 评审结果卡片：通过 / 退回。意见正文随卡片展示（来自批注表 review/rejection 批注）。
+export async function notifyReviewResult(
+  task: { id: string; title: string; projectId: string; assigneeIds: string[] },
+  result: "approved" | "rejected",
+  reviewerId: string,
+  note?: string,
+): Promise<void> {
+  const recipients = task.assigneeIds.filter((id) => id !== reviewerId);
+  if (recipients.length === 0) return;
+
+  const [proj] = await db
+    .select({ name: projects.name })
+    .from(projects)
+    .where(eq(projects.id, task.projectId));
+  const [reviewer] = await db
+    .select({ name: users.name })
+    .from(users)
+    .where(eq(users.id, reviewerId));
+
+  const card = {
+    config: { wide_screen_mode: true },
+    header: {
+      template: result === "approved" ? "green" : "red",
+      title: {
+        tag: "plain_text",
+        content: result === "approved" ? "✅ 评审通过" : "↩️ 任务被退回",
+      },
+    },
+    elements: [
+      {
+        tag: "div",
+        fields: [
+          { tag: "lark_md", content: `**任务**\n${task.title}`, is_short: false },
+          {
+            tag: "lark_md",
+            content: `**项目**\n${proj?.name ?? "（未知项目）"}`,
+            is_short: true,
+          },
+          {
+            tag: "lark_md",
+            content: `**评审人**\n${reviewer?.name ?? "—"}`,
+            is_short: true,
+          },
+          {
+            tag: "lark_md",
+            content: `**意见**\n${note?.trim() || "—"}`,
+            is_short: false,
+          },
+        ],
+      },
+      {
+        tag: "action",
+        actions: [
+          {
+            tag: "button",
+            text: { tag: "plain_text", content: "查看任务" },
+            type: "primary",
+            url: `${process.env.AGILECAMPUS_URL ?? "http://localhost:3000"}/projects/${task.projectId}?task=${task.id}`,
+          },
+        ],
+      },
+    ],
+  };
+
+  for (const userId of recipients) {
+    const openId = await openIdOf(userId);
+    if (!openId) continue;
+    await safeSend(openId, card);
+  }
+}

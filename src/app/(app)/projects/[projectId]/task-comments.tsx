@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import type { CommentAttachment } from "@/db/schema";
 
 type Member = { id: string; name: string };
-type ViewerRole = "admin" | "teacher" | "student";
+type ViewerRole = "admin" | "teacher" | "leader" | "student";
 type ImportanceType = "decision" | "issue" | "delivery" | "reference";
 
 type CommentDto = {
@@ -44,7 +44,13 @@ type TimelineItem =
   | { kind: "comment"; comment: CommentDto }
   | { kind: "activity"; activity: ActivityDto };
 
-const STATUS_LABEL: Record<string, string> = { todo: "待办", doing: "进行中", done: "已完成" };
+const STATUS_LABEL: Record<string, string> = {
+  todo: "待办",
+  doing: "进行中",
+  reviewing: "待评审",
+  rejected: "已退回",
+  done: "已完成",
+};
 
 const IMPORTANCE_LABEL: Record<string, string> = {
   decision: "决策",
@@ -101,7 +107,7 @@ export function TaskDiscussion({
 
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const nameById = new Map(members.map((m) => [m.id, m.name]));
-  const canMark = viewerRole === "admin" || viewerRole === "teacher";
+  const canMark = viewerRole === "admin" || viewerRole === "teacher" || viewerRole === "leader";
 
   useEffect(() => {
     let cancelled = false;
@@ -466,8 +472,8 @@ function CommentRow({
 
   const deleted = Boolean(comment.deletedAt);
   const canEditThis = !deleted && comment.userId === viewerId;
-  const canDeleteThis = !deleted && (comment.userId === viewerId || viewerRole === "admin" || viewerRole === "teacher");
-  const canViewHistory = comment.userId === viewerId || viewerRole === "admin" || viewerRole === "teacher";
+  const canDeleteThis = !deleted && (comment.userId === viewerId || viewerRole === "admin" || viewerRole === "teacher" || viewerRole === "leader");
+  const canViewHistory = comment.userId === viewerId || viewerRole === "admin" || viewerRole === "teacher" || viewerRole === "leader";
 
   function startEdit() {
     setDraft(comment.content);

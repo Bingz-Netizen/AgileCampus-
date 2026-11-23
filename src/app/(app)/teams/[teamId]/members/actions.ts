@@ -9,7 +9,7 @@ import { AppError } from "@/lib/errors";
 const schema = z.object({
   teamId: z.uuid(),
   userId: z.uuid(),
-  role: z.enum(["admin", "teacher", "student"]),
+  role: z.enum(["admin", "teacher", "leader", "student"]),
 });
 
 export async function updateRoleAction(formData: FormData) {

@@ -15,7 +15,8 @@ import {
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 
-export const teamRoleEnum = pgEnum("team_role", ["admin", "teacher", "student"]);
+// 团队角色：admin＞teacher＞leader（小组长，教师下放的初审/盯办职责）＞student
+export const teamRoleEnum = pgEnum("team_role", ["admin", "teacher", "leader", "student"]);
 export type TeamRole = (typeof teamRoleEnum.enumValues)[number];
 
 export const users = pgTable("users", {
@@ -55,7 +56,14 @@ export const teamMembers = pgTable(
 
 export const projectStatusEnum = pgEnum("project_status", ["active", "archived"]);
 export const milestoneStatusEnum = pgEnum("milestone_status", ["open", "done"]);
-export const taskStatusEnum = pgEnum("task_status", ["todo", "doing", "done"]);
+export const taskStatusEnum = pgEnum("task_status", [
+  "todo",
+  "doing",
+  // 批注评审流程新增：待评审（学生提交后）、退回修改（教师退回后）
+  "reviewing",
+  "rejected",
+  "done",
+]);
 export const taskPriorityEnum = pgEnum("task_priority", ["low", "medium", "high"]);
 export type ProjectStatus = (typeof projectStatusEnum.enumValues)[number];
 export type TaskStatus = (typeof taskStatusEnum.enumValues)[number];
@@ -429,5 +437,39 @@ export const notifications = pgTable(
   (t) => [
     index("notifications_user_idx").on(t.userId),
     index("notifications_user_read_idx").on(t.userId, t.readAt),
+  ],
+);
+
+// ---- 批注评审（第二阶段）：任务批注 + 评审意见留痕 ----
+
+// 批注类型：comment＝普通批注（师生讨论），review＝评审意见（教师通过时附言），rejection＝退回意见
+export const taskAnnotationKindEnum = pgEnum("task_annotation_kind", [
+  "comment",
+  "review",
+  "rejection",
+]);
+export type TaskAnnotationKind = (typeof taskAnnotationKindEnum.enumValues)[number];
+
+export const taskAnnotations = pgTable(
+  "task_annotations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    taskId: uuid("task_id")
+      .notNull()
+      .references(() => tasks.id, { onDelete: "cascade" }),
+    authorId: uuid("author_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    // 回复：自引用指向被回复的批注，空＝顶层批注。父删则回复随之（师生双向回复）。
+    parentId: uuid("parent_id").references((): AnyPgColumn => taskAnnotations.id, {
+      onDelete: "cascade",
+    }),
+    content: text("content").notNull(),
+    kind: taskAnnotationKindEnum("kind").notNull().default("comment"),
+    createdAt: timestamp("created_at").notNull().defaultNow(),
+  },
+  (t) => [
+    index("task_annotations_task_idx").on(t.taskId),
+    index("task_annotations_parent_idx").on(t.parentId),
   ],
 );

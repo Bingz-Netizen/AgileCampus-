@@ -34,9 +34,9 @@ async function requireTaskMemberAccess(actorId: string, taskId: string) {
 }
 
 // ---- 评论权限口径（任务评论讨论区）----
-// 重要标记：仅 admin/teacher 可改（student 即使自己的评论也不可标记/取消）。
+// 重要标记：admin/teacher/leader 可改（student 即使自己的评论也不可标记/取消）。
 export function canMarkImportant(role: TeamRole): boolean {
-  return role === "admin" || role === "teacher";
+  return role === "admin" || role === "teacher" || role === "leader";
 }
 
 // 编辑：仅作者可编辑自己的评论（admin/teacher 亦不代改，避免篡改讨论记录）。
@@ -44,13 +44,13 @@ export function canEditComment(actorId: string, comment: { userId: string }): bo
   return actorId === comment.userId;
 }
 
-// 删除：作者删己，admin/teacher 可删任何，student 不可删他人。
+// 删除：作者删己，admin/teacher/leader 可删任何，student 不可删他人。
 export function canDeleteComment(
   actorId: string,
   role: TeamRole,
   comment: { userId: string },
 ): boolean {
-  return actorId === comment.userId || role === "admin" || role === "teacher";
+  return actorId === comment.userId || role === "admin" || role === "teacher" || role === "leader";
 }
 
 // 校验 mentions 均为该团队成员（去重；排除操作者自身在通知阶段处理）

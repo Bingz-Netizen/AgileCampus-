@@ -67,7 +67,7 @@ export default async function ProjectPage({
   // 成员负载：纯函数聚合（含未完成/逾期/相对负载），供团队首页顶部仪表
   const memberLoads = computeMemberLoad(members, projectTasks, today);
 
-  const canWrite = role === "admin" || role === "student";
+  const canWrite = role === "admin" || role === "student" || role === "leader";
   const isAdmin = role === "admin";
 
   // 看板/列表共用同一份精简任务形状；甘特只需排期相关字段

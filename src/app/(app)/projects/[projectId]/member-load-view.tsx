@@ -12,12 +12,16 @@ import { withTask } from "./view-nav";
 const STATUS_LABEL: Record<string, string> = {
   todo: "待办",
   doing: "进行中",
+  reviewing: "待评审",
+  rejected: "已退回",
   done: "已完成",
 };
 
 const STATUS_BADGE: Record<string, string> = {
   todo: "bg-todo text-white",
   doing: "bg-doing text-white",
+  reviewing: "bg-primary text-white",
+  rejected: "bg-high text-white",
   done: "bg-done text-white",
 };
 
