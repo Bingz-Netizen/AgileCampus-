@@ -19,7 +19,7 @@ export function NewTaskForm({
   );
 
   return (
-    <form action={formAction} className="ac-card space-y-2 p-4">
+    <form action={formAction} className="ac-card space-y-2 p-4" data-onboarding-anchor="break-tasks">
       <h2 className="font-medium text-ink">新建任务</h2>
       <input type="hidden" name="projectId" value={projectId} />
       <input name="title" placeholder="任务标题" className="ac-field" />

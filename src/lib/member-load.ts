@@ -39,8 +39,6 @@ export type MemberLoad = {
   deadlinePressure: number; // 截止压力分 = min(加权和, 60)
   loadScore: number; // 负载评分 = min(100, round(基础分 + 压力分))
   loadLevel: LoadLevel; // 0–59 normal / 60–79 busy / 80–100 overload
-  loadRank: number | null; // 当前团队内负载排名（1 起）；仅 1–3 展示徽章
-  rankTotal: number; // 参与排名的成员总数
   urgent: UrgentTask[]; // 最紧急 3 条（未完成，按截止时间升序）
   all: UrgentTask[]; // 全部任务（含已完成），按截止时间升序
 };
@@ -87,11 +85,6 @@ export const SCORING_RULES: { title: string; detail: string }[] = [
     detail: `0–${SCORING.busyMin - 1} 正常（绿色）· ${SCORING.busyMin}–${SCORING.overloadMin - 1} 较忙（黄色）· ${SCORING.overloadMin}–${SCORING.scoreCap} 过载（红色）`,
   },
   { title: "逾期提醒", detail: "有逾期任务时，成员卡片显示红色边框 + 红点。" },
-  {
-    title: "排名",
-    detail:
-      "按成员在当前项目团队内的负载评分（loadScore）从高到低排序；同分依次按逾期任务数、截止压力分、总任务数降序、姓名升序，确保排名唯一；仅展示第 1–3 名。",
-  },
 ];
 
 // 截止时间升序（空截止排最后）；同截止按优先级高→低，再按标题。
@@ -137,7 +130,7 @@ export function computeMemberLoad(
     priority: t.priority,
   });
 
-  const rows = members.map((m): Omit<MemberLoad, "loadRank" | "rankTotal"> => {
+  const rows = members.map((m): MemberLoad => {
     const list = byMember.get(m.id) ?? [];
     const open = list.filter(isOpen);
     const openCount = open.length;
@@ -195,15 +188,11 @@ export function computeMemberLoad(
     };
   });
 
-  // 排名唯一：loadScore 降序，同分依次按逾期数/截止压力分/总任务数降序、姓名升序。
-  // 排序即排名顺序（loadRank 1..N），前三名在卡片展示徽章，其余不展示。
-  const ranked = [...rows].sort(
+  // 评分高者在前，便于一眼看出谁任务过多、谁无事可做
+  return rows.sort(
     (a, b) =>
       b.loadScore - a.loadScore ||
-      b.overdueCount - a.overdueCount ||
-      b.deadlinePressure - a.deadlinePressure ||
-      b.totalCount - a.totalCount ||
+      b.openCount - a.openCount ||
       a.name.localeCompare(b.name),
   );
-  return ranked.map((row, i) => ({ ...row, loadRank: i + 1, rankTotal: ranked.length }));
 }
