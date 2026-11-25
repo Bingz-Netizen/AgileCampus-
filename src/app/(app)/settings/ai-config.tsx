@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useActionState } from "react";
 import { saveAiConfigAction, type AiConfigState } from "./actions";
@@ -85,7 +85,7 @@ export function AiConfigCard({ configured, baseUrl, model, keyTail, serverConfig
             <input
               id="ai-model"
               name="model"
-              placeholder="deepseek-chat / qwen-plus / moonshot-v1-8k"
+              placeholder="deepseek-flash / qwen-plus / moonshot-v1-8k"
               className="ac-field"
               maxLength={128}
             />

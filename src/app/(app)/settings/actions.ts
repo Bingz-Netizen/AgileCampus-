@@ -1,4 +1,4 @@
-"use server";
+﻿"use server";
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
@@ -55,7 +55,7 @@ export async function saveAiConfigAction(
 
     const baseUrl = parsed.data.baseUrl || existing?.baseUrl || "";
     const model = parsed.data.model || existing?.model || "";
-    if (!model) return { error: "请填写模型名（例如 deepseek-chat、qwen-plus、moonshot-v1-8k）" };
+    if (!model) return { error: "请填写模型名（例如 deepseek-flash、qwen-plus、moonshot-v1-8k）" };
 
     await setUserAiConfig(session.user.id, { apiKey, baseUrl, model });
   } catch (e) {
