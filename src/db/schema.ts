@@ -28,6 +28,11 @@ export const users = pgTable("users", {
   feishuOpenId: text("feishu_open_id").unique(),
   feishuName: text("feishu_name"),
   feishuBoundAt: timestamp("feishu_bound_at"),
+  // AI 助手个人配置（BYOK）：兼容任意 OpenAI 兼容接口，key 经 AES-256-GCM 加密存储，
+  // 密钥派生自 AUTH_SECRET；baseUrl 与 model 为明文（非敏感），三者同生共死——清 key 即全清。
+  aiApiKeyEnc: text("ai_api_key_enc"),
+  aiBaseUrl: text("ai_base_url"),
+  aiModel: text("ai_model"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

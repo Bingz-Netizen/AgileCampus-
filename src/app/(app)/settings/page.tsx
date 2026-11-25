@@ -1,10 +1,12 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db } from "@/db";
 import { users } from "@/db/schema";
+import { decryptSecret } from "@/lib/crypto";
 import { FeishuCard } from "./feishu-card";
+import { AiConfigCard } from "./ai-config";
 
 function fmt(d: Date | null): string | null {
   if (!d) return null;
@@ -21,17 +23,35 @@ export default async function SettingsPage({
   if (!session?.user) redirect("/login");
 
   const [row] = await db
-    .select({ feishuName: users.feishuName, feishuBoundAt: users.feishuBoundAt })
+    .select({
+      feishuName: users.feishuName,
+      feishuBoundAt: users.feishuBoundAt,
+      aiApiKeyEnc: users.aiApiKeyEnc,
+      aiBaseUrl: users.aiBaseUrl,
+      aiModel: users.aiModel,
+    })
     .from(users)
     .where(eq(users.id, session.user.id));
+
+  // 只展示 Key 尾号，绝不回显明文
+  const keyTail = row?.aiApiKeyEnc ? (decryptSecret(row.aiApiKeyEnc)?.slice(-4) ?? null) : null;
+  const serverConfigured = Boolean(process.env.AI_API_KEY ?? process.env.DEEPSEEK_API_KEY);
   const { feishu } = await searchParams;
 
   return (
     <main className="mx-auto max-w-2xl space-y-8 py-8">
       <header className="space-y-1">
         <h1 className="font-display text-2xl font-semibold text-ink">设置</h1>
-        <p className="text-sm text-ink-soft">账号、新手引导与个人访问令牌设置。</p>
+        <p className="text-sm text-ink-soft">账号、AI 助手模型、新手引导与个人访问令牌设置。</p>
       </header>
+
+      <AiConfigCard
+        configured={keyTail !== null}
+        baseUrl={row?.aiBaseUrl ?? null}
+        model={row?.aiModel ?? null}
+        keyTail={keyTail}
+        serverConfigured={serverConfigured}
+      />
 
       <FeishuCard
         boundName={row?.feishuName ?? null}
