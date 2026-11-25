@@ -1,4 +1,4 @@
-﻿import Link from "next/link";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { eq } from "drizzle-orm";
 import { auth } from "@/lib/auth";
@@ -35,7 +35,6 @@ export default async function SettingsPage({
 
   // 只展示 Key 尾号，绝不回显明文
   const keyTail = row?.aiApiKeyEnc ? (decryptSecret(row.aiApiKeyEnc)?.slice(-4) ?? null) : null;
-  const serverConfigured = Boolean(process.env.AI_API_KEY ?? process.env.DEEPSEEK_API_KEY);
   const { feishu } = await searchParams;
 
   return (
@@ -50,7 +49,6 @@ export default async function SettingsPage({
         baseUrl={row?.aiBaseUrl ?? null}
         model={row?.aiModel ?? null}
         keyTail={keyTail}
-        serverConfigured={serverConfigured}
       />
 
       <FeishuCard

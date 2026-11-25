@@ -35,11 +35,11 @@ describe("crypto 加密工具", () => {
   });
 });
 
-describe("setUserAiConfig / getUserAiConfig", () => {
+describe("setUserAiConfig / getUserAiConfig（每人一份，互不共享）", () => {
   beforeEach(resetDb);
   afterEach(() => vi.unstubAllEnvs());
 
-  it("key 加密落库，读取时还原；空服务地址与模型名存 null", async () => {
+  it("key 加密落库，读取时还原；空白字段存 null", async () => {
     const user = await createUser({ email: "ai@example.com", password: "password123", name: "甲" });
     await setUserAiConfig(user.id, {
       apiKey: "sk-personal-abc",
@@ -60,23 +60,25 @@ describe("setUserAiConfig / getUserAiConfig", () => {
     });
   });
 
-  it("再次保存覆盖旧配置", async () => {
-    const user = await createUser({ email: "over@example.com", password: "password123", name: "乙" });
-    await setUserAiConfig(user.id, {
-      apiKey: "sk-old",
-      baseUrl: "https://a.example.com",
+  it("两个用户的配置互不影响", async () => {
+    const a = await createUser({ email: "a@example.com", password: "password123", name: "甲" });
+    const b = await createUser({ email: "b@example.com", password: "password123", name: "乙" });
+    await setUserAiConfig(a.id, {
+      apiKey: "sk-a",
+      baseUrl: "https://a.example.com/v1",
       model: "model-a",
     });
-    await setUserAiConfig(user.id, {
-      apiKey: "sk-new",
+
+    expect(await getUserAiConfig(a.id)).toMatchObject({ apiKey: "sk-a", model: "model-a" });
+    expect(await getUserAiConfig(b.id)).toBeNull();
+
+    await setUserAiConfig(b.id, {
+      apiKey: "sk-b",
       baseUrl: "https://b.example.com/v1",
       model: "model-b",
     });
-    expect(await getUserAiConfig(user.id)).toEqual({
-      apiKey: "sk-new",
-      baseUrl: "https://b.example.com/v1",
-      model: "model-b",
-    });
+    expect(await getUserAiConfig(a.id)).toMatchObject({ apiKey: "sk-a" });
+    expect(await getUserAiConfig(b.id)).toMatchObject({ apiKey: "sk-b" });
   });
 
   it("空 key 清除全部三项", async () => {
@@ -101,7 +103,7 @@ describe("setUserAiConfig / getUserAiConfig", () => {
   });
 });
 
-describe("getModel 解析优先级（任意 OpenAI 兼容接口）", () => {
+describe("getModel（只用本人配置，不共享服务器 Key）", () => {
   beforeEach(resetDb);
   afterEach(() => {
     vi.unstubAllEnvs();
@@ -119,14 +121,6 @@ describe("getModel 解析优先级（任意 OpenAI 兼容接口）", () => {
       captured.url = String(_url);
       captured.auth = new Headers(init?.headers).get("authorization");
       captured.body = JSON.parse(String(init?.body));
-      if (captured.body.stream) {
-        const sse = [
-          `data: ${JSON.stringify({ id: "x", object: "chat.completion.chunk", created: 1, model: captured.body.model, choices: [{ index: 0, delta: { content: "你好" }, finish_reason: null }] })}\n\n`,
-          `data: ${JSON.stringify({ id: "x", object: "chat.completion.chunk", created: 1, model: captured.body.model, choices: [{ index: 0, delta: {}, finish_reason: "stop" }] })}\n\n`,
-          "data: [DONE]\n\n",
-        ].join("");
-        return new Response(sse, { status: 200, headers: { "content-type": "text/event-stream" } });
-      }
       return new Response(
         JSON.stringify({
           id: "chatcmpl-1",
@@ -149,16 +143,13 @@ describe("getModel 解析优先级（任意 OpenAI 兼容接口）", () => {
     return { captured, result };
   }
 
-  it("个人配置优先：用自己的 key、地址与模型名", async () => {
+  it("用本人的 key、服务地址与模型名发起请求", async () => {
     const user = await createUser({ email: "byok@example.com", password: "password123", name: "戊" });
     await setUserAiConfig(user.id, {
       apiKey: "sk-mine",
       baseUrl: "https://api.moonshot.cn/v1",
       model: "moonshot-v1-8k",
     });
-    vi.stubEnv("AI_API_KEY", "sk-server");
-    vi.stubEnv("AI_BASE_URL", "https://server.example.com/v1");
-    vi.stubEnv("AI_MODEL", "server-model");
 
     const { captured, result } = await runTurnAndCapture(user.id);
     expect(result.text).toContain("你好");
@@ -167,61 +158,35 @@ describe("getModel 解析优先级（任意 OpenAI 兼容接口）", () => {
     expect(captured.body.model).toBe("moonshot-v1-8k");
   });
 
-  it("个人只填 key 时，地址与模型名回落服务器配置", async () => {
-    const user = await createUser({ email: "partial@example.com", password: "password123", name: "己" });
-    await setUserAiConfig(user.id, { apiKey: "sk-mine", baseUrl: "", model: "" });
-    vi.stubEnv("AI_BASE_URL", "https://server.example.com/v1");
-    vi.stubEnv("AI_MODEL", "server-model");
-
-    const { captured } = await runTurnAndCapture(user.id);
-    expect(captured.url).toContain("https://server.example.com/v1/chat/completions");
-    expect(captured.auth).toBe("Bearer sk-mine");
-    expect(captured.body.model).toBe("server-model");
-  });
-
-  it("个人 key 就绪但缺模型名与服务器默认值：抛错并指向设置页", async () => {
-    const user = await createUser({ email: "nomodel@example.com", password: "password123", name: "庚" });
-    await setUserAiConfig(user.id, { apiKey: "sk-mine", baseUrl: "", model: "" });
-    vi.stubEnv("AI_MODEL", undefined);
-    vi.stubEnv("DEEPSEEK_MODEL", undefined);
+  it("队友的配置不会被借用：A 有配置，B 仍然报未配置", async () => {
+    const a = await createUser({ email: "owner@example.com", password: "password123", name: "甲" });
+    const b = await createUser({ email: "other@example.com", password: "password123", name: "乙" });
+    await setUserAiConfig(a.id, {
+      apiKey: "sk-a",
+      baseUrl: "https://a.example.com/v1",
+      model: "model-a",
+    });
 
     const { getModel: gm } = await import("@/lib/agent/model");
-    await expect(gm(user.id)).rejects.toThrow(AppError);
-    await expect(gm(user.id)).rejects.toThrow(/设置/);
+    await expect(gm(b.id)).rejects.toThrow(AppError);
+    await expect(gm(b.id)).rejects.toThrow(/设置/);
   });
 
-  it("无个人配置时使用服务器环境变量（通用 AI_* 名）", async () => {
-    const user = await createUser({ email: "env@example.com", password: "password123", name: "辛" });
-    vi.stubEnv("AI_API_KEY", "sk-server");
-    vi.stubEnv("AI_BASE_URL", "https://gateway.example.com/v1");
-    vi.stubEnv("AI_MODEL", "qwen-plus");
-
-    const { captured } = await runTurnAndCapture(user.id);
-    expect(captured.url).toContain("https://gateway.example.com/v1/chat/completions");
-    expect(captured.auth).toBe("Bearer sk-server");
-    expect(captured.body.model).toBe("qwen-plus");
-  });
-
-  it("兼容历史 DEEPSEEK_* 环境变量名", async () => {
-    const user = await createUser({ email: "legacy@example.com", password: "password123", name: "壬" });
-    vi.stubEnv("AI_API_KEY", undefined);
-    vi.stubEnv("DEEPSEEK_API_KEY", "sk-legacy");
-    vi.stubEnv("DEEPSEEK_BASE_URL", "https://legacy.example.com/v1");
-    vi.stubEnv("DEEPSEEK_MODEL", "legacy-model");
-
-    const { captured } = await runTurnAndCapture(user.id);
-    expect(captured.url).toContain("https://legacy.example.com/v1/chat/completions");
-    expect(captured.auth).toBe("Bearer sk-legacy");
-    expect(captured.body.model).toBe("legacy-model");
-  });
-
-  it("个人与服务器都无 key：抛出指向设置页的可展示错误", async () => {
+  it("没配置时抛错并指向设置页", async () => {
     const user = await createUser({ email: "nokey@example.com", password: "password123", name: "癸" });
-    vi.stubEnv("AI_API_KEY", undefined);
-    vi.stubEnv("DEEPSEEK_API_KEY", undefined);
-
     const { getModel: gm } = await import("@/lib/agent/model");
     await expect(gm(user.id)).rejects.toThrow(AppError);
     await expect(gm(user.id)).rejects.toThrow(/设置/);
+  });
+
+  it("缺服务地址或模型名时给出具体提示", async () => {
+    const u1 = await createUser({ email: "nobase@example.com", password: "password123", name: "子" });
+    await setUserAiConfig(u1.id, { apiKey: "sk-x", baseUrl: "", model: "model-x" });
+    const { getModel: gm } = await import("@/lib/agent/model");
+    await expect(gm(u1.id)).rejects.toThrow(/服务地址/);
+
+    const u2 = await createUser({ email: "nomodel@example.com", password: "password123", name: "丑" });
+    await setUserAiConfig(u2.id, { apiKey: "sk-x", baseUrl: "https://x.example.com/v1", model: "" });
+    await expect(gm(u2.id)).rejects.toThrow(/模型名/);
   });
 });

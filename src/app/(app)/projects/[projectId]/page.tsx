@@ -1,7 +1,7 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { z } from "zod";
-import { eq, desc } from "drizzle-orm";
+import { and, eq, desc } from "drizzle-orm";
 import { auth } from "@/lib/auth";
 import { db } from "@/db";
 import { conversations, messages as messagesTable } from "@/db/schema";
@@ -189,7 +189,12 @@ export default async function ProjectPage({
   const [latestConv] = await db
     .select({ id: conversations.id })
     .from(conversations)
-    .where(eq(conversations.projectId, projectId))
+    .where(
+      and(
+        eq(conversations.projectId, projectId),
+        eq(conversations.createdById, session.user.id),
+      ),
+    )
     .orderBy(desc(conversations.createdAt))
     .limit(1);
 

@@ -45,7 +45,7 @@ export async function saveAiConfigAction(
     if (formData.get("clear") === "1") {
       await setUserAiConfig(session.user.id, { apiKey: "", baseUrl: "", model: "" });
       revalidatePath("/settings");
-      return { ok: "已清除个人配置——AI 助手将使用服务器配置。" };
+      return { ok: "已清除个人配置——AI 助手将不可用，重新填写后才能继续使用。" };
     }
 
     // 留空的字段保持原值；没有任何可用配置时要求至少填写 Key 与模型
@@ -54,6 +54,7 @@ export async function saveAiConfigAction(
     if (!apiKey) return { error: "请填写 API Key（或由部署者在服务器环境变量中配置）" };
 
     const baseUrl = parsed.data.baseUrl || existing?.baseUrl || "";
+    if (!baseUrl) return { error: "请填写服务地址（例如 https://api.deepseek.com/v1）" };
     const model = parsed.data.model || existing?.model || "";
     if (!model) return { error: "请填写模型名（例如 deepseek-flash、qwen-plus、moonshot-v1-8k）" };
 

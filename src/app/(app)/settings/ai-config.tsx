@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useActionState } from "react";
 import { saveAiConfigAction, type AiConfigState } from "./actions";
@@ -8,10 +8,9 @@ type Props = {
   baseUrl: string | null;
   model: string | null;
   keyTail: string | null;
-  serverConfigured: boolean;
 };
 
-export function AiConfigCard({ configured, baseUrl, model, keyTail, serverConfigured }: Props) {
+export function AiConfigCard({ configured, baseUrl, model, keyTail }: Props) {
   const [state, formAction, pending] = useActionState<AiConfigState, FormData>(
     saveAiConfigAction,
     null,
@@ -23,14 +22,8 @@ export function AiConfigCard({ configured, baseUrl, model, keyTail, serverConfig
     <section className="ac-card space-y-3 p-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-display text-base font-semibold text-ink">AI 助手模型</h2>
-        <span className="text-xs text-ink-faint">自带 Key（BYOK）· 仅本人生效</span>
+        <span className="text-xs text-ink-faint">每人一份 · 自带 Key（BYOK）</span>
       </div>
-
-      <p className="text-sm text-ink-soft">
-        填写任意 <span className="font-medium">OpenAI 兼容接口</span> 的 API Key、服务地址与模型名，
-        项目里的 AI 助手就用它来拆任务、答进度。不绑定具体厂商：DeepSeek、通义千问、豆包、月之暗面、
-        OpenAI 都可以。
-      </p>
 
       {configured ? (
         <p className="text-sm text-ink">
@@ -41,12 +34,7 @@ export function AiConfigCard({ configured, baseUrl, model, keyTail, serverConfig
           {keyTail && <span className="text-ink-faint">（Key 尾号 ····{keyTail}）</span>}
         </p>
       ) : (
-        <p className="text-sm text-ink-soft">
-          未配置个人 Key——
-          {serverConfigured
-            ? "当前使用服务器统一配置的模型。"
-            : "服务器也没有统一配置，填写后才能使用 AI 助手。"}
-        </p>
+        <p className="text-sm text-ink-soft">未配置个人 Key——填写后才能使用 AI 助手。</p>
       )}
 
       <form action={formAction} className="space-y-3">
@@ -68,7 +56,7 @@ export function AiConfigCard({ configured, baseUrl, model, keyTail, serverConfig
         <div className="grid gap-3 sm:grid-cols-2">
           <div>
             <label className="ac-label" htmlFor="ai-base-url">
-              服务地址
+              服务地址（必填）
             </label>
             <input
               id="ai-base-url"
@@ -80,7 +68,7 @@ export function AiConfigCard({ configured, baseUrl, model, keyTail, serverConfig
           </div>
           <div>
             <label className="ac-label" htmlFor="ai-model">
-              模型名
+              模型名（必填）
             </label>
             <input
               id="ai-model"
@@ -93,8 +81,7 @@ export function AiConfigCard({ configured, baseUrl, model, keyTail, serverConfig
         </div>
 
         <p className="text-xs text-ink-faint">
-          留空字段保持原值；服务地址与模型名不确定时填写留空、沿用服务器配置。
-          Key 加密存储，不会明文落库。
+          服务地址与模型名请照服务商文档填写；留空的字段保持原值。Key 加密存储，不会明文落库。
         </p>
 
         <div className="flex gap-2">
@@ -110,7 +97,7 @@ export function AiConfigCard({ configured, baseUrl, model, keyTail, serverConfig
         <form action={formAction} className="border-t border-line pt-3">
           <input type="hidden" name="clear" value="1" />
           <button disabled={pending} className="ac-btn-ghost text-high hover:border-high hover:text-high">
-            清除个人配置（改用服务器配置）
+            清除个人配置（清除后 AI 助手不可用）
           </button>
         </form>
       )}

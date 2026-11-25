@@ -1,10 +1,10 @@
-import { asc, desc, eq } from "drizzle-orm";
+import { and, asc, desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { conversations, messages } from "@/db/schema";
 import { getProjectForUser } from "@/lib/project";
 import { ForbiddenError, AppError } from "@/lib/errors";
 
-// 每项目复用最近一条会话（MVP 简化：每项目一活跃会话）
+// 每项目、每用户复用最近一条会话：AI 对话属于个人，队友之间互不可见。
 export async function getOrCreateConversation(actorId: string, projectId: string) {
   const access = await getProjectForUser(actorId, projectId);
   if (!access) throw new ForbiddenError();
@@ -12,7 +12,7 @@ export async function getOrCreateConversation(actorId: string, projectId: string
   const [existing] = await db
     .select()
     .from(conversations)
-    .where(eq(conversations.projectId, projectId))
+    .where(and(eq(conversations.projectId, projectId), eq(conversations.createdById, actorId)))
     .orderBy(desc(conversations.createdAt))
     .limit(1);
   if (existing) return existing;
@@ -26,6 +26,14 @@ export async function getOrCreateConversation(actorId: string, projectId: string
 
 export type ToolTraceEntry = { toolName: string; input: unknown; output: unknown };
 
+/** 清空当前用户在该项目的对话历史（级联删除消息），不影响队友的会话 */
+export async function clearConversation(actorId: string, projectId: string) {
+  const access = await getProjectForUser(actorId, projectId);
+  if (!access) throw new ForbiddenError();
+  await db
+    .delete(conversations)
+    .where(and(eq(conversations.projectId, projectId), eq(conversations.createdById, actorId)));
+}
 export async function persistTurn(
   conversationId: string,
   userText: string,

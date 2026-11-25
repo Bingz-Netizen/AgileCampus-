@@ -42,6 +42,7 @@ export function ChatPanel({
   const [messages, setMessages] = useState<Msg[]>(initialMessages);
   const [input, setInput] = useState("");
   const [pending, setPending] = useState(false);
+  const [clearing, setClearing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const panelRef = useRef<HTMLDivElement>(null);
@@ -72,6 +73,8 @@ export function ChatPanel({
   }, [open, messages, pending]);
 
   function startDrag(e: React.PointerEvent<HTMLDivElement>) {
+    // 标题栏上的按钮（清空 / 收起）不参与拖拽：否则指针被捕获，click 永远到不了按钮
+    if ((e.target as HTMLElement).closest("button")) return;
     const rect = panelRef.current?.getBoundingClientRect();
     if (!rect) return;
     dragRef.current = {
@@ -105,6 +108,30 @@ export function ChatPanel({
       }
       return p;
     });
+  }
+
+  async function clearHistory() {
+    if (clearing || pending) return;
+    if (!window.confirm("清空后不可恢复，确定清空当前项目的聊天记录？")) return;
+    setClearing(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/chat/clear", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error ?? "清空失败，请重试");
+        return;
+      }
+      setMessages([]);
+    } catch {
+      setError("网络异常，请重试");
+    } finally {
+      setClearing(false);
+    }
   }
 
   async function send() {
@@ -166,17 +193,31 @@ export function ChatPanel({
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold text-ink">项目助手</p>
               <p className="truncate text-[11px] text-ink-faint">
-                拖动标题栏可移动 · 记录会自动保存
+                拖动标题栏可移动 · 记录自动保存
               </p>
             </div>
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              className="shrink-0 rounded px-2 py-1 text-xs text-ink-faint hover:bg-line hover:text-ink"
-              aria-label="收起"
+            <div
+              className="flex shrink-0 items-center gap-1"
+              onPointerDown={(e) => e.stopPropagation()}
             >
-              收起
-            </button>
+              <button
+                type="button"
+                onClick={clearHistory}
+                disabled={clearing || pending || messages.length === 0}
+                className="rounded px-2 py-1 text-xs text-ink-faint hover:bg-line hover:text-high disabled:opacity-40"
+                aria-label="清空聊天记录"
+              >
+                {clearing ? "清空中…" : "清空"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="rounded px-2 py-1 text-xs text-ink-faint hover:bg-line hover:text-ink"
+                aria-label="收起"
+              >
+                收起
+              </button>
+            </div>
           </div>
 
           {/* 消息区 */}
