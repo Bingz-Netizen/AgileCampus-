@@ -67,7 +67,7 @@ export function TaskCard({
           ? { transform: `translate(${transform.x}px, ${transform.y}px)` }
           : undefined
       }
-      className={`ac-card p-3 text-sm transition hover:shadow-md ${
+      className={`ac-card p-3 text-sm transition-shadow hover:shadow-md ${
         isDragging ? "opacity-50" : ""
       } ${blocked ? "opacity-60" : ""} ${focused ? "ring-2 ring-accent" : ""}`}
     >
