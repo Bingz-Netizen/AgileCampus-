@@ -213,11 +213,11 @@ describe("任务活动流", () => {
     const { student, project } = await scene();
     const t = await createTask(student.id, project.id, { title: "甲" });
     await updateTask(student.id, t.id, { status: "doing" });
-    await updateTask(student.id, t.id, { status: "done" });
+    await updateTask(student.id, t.id, { status: "todo" });
     const acts = await listTaskActivities(student.id, t.id);
     expect(acts).toHaveLength(2);
     expect(acts[0]).toMatchObject({ type: "status_changed", payload: { from: "todo", to: "doing" } });
-    expect(acts[1]).toMatchObject({ type: "status_changed", payload: { from: "doing", to: "done" } });
+    expect(acts[1]).toMatchObject({ type: "status_changed", payload: { from: "doing", to: "todo" } });
   });
 
   it("依赖增删留痕", async () => {

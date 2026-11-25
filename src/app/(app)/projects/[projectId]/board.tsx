@@ -127,15 +127,9 @@ export function Board({
     // 已在目标列则无须提交
     if (!column || !task || column.matches(task)) return;
 
-    // 评审两态不可拖入：只能走任务详情里的评审动作
+    // 待评审/已退回/已完成不可拖入：分别只能通过评审动作推进、或先提交评审并经教师通过
     if (column.droppable === false) {
-      setError("「待评审 / 已退回」只能通过任务详情的评审操作流转");
-      return;
-    }
-
-    // 完成-开始依赖：前置未完成时，后置任务不可拖入「已完成」（仅 status 分组会提交 done 补丁）
-    if (column.patch.status === "done" && (blockedBy[taskId]?.length ?? 0) > 0) {
-      setError("存在未完成的前置任务，不能拖到已完成");
+      setError("「待评审 / 已退回」只能通过任务详情的评审操作流转；完成须先提交评审并经教师通过");
       return;
     }
 

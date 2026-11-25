@@ -15,7 +15,7 @@ export type BoardColumn = {
   tone: string; // tailwind 文字色 class
   patch: ColumnPatch;
   matches: (t: FilterableTask) => boolean;
-  // 评审两态不可拖入：只能通过任务详情的评审按钮流转
+  // 评审两态与「已完成」不可拖入：只能通过任务详情的评审动作流转
   droppable?: boolean;
 };
 
@@ -117,8 +117,8 @@ export function deriveColumns(group: GroupBy, ctx: ColumnContext): BoardColumn[]
         tone: c.tone,
         patch: { status: c.key } as ColumnPatch,
         matches: (t: FilterableTask) => t.status === c.key,
-        // 评审两态由评审动作推进，看板不提供拖入
-        droppable: c.key !== "reviewing" && c.key !== "rejected",
+        // 评审两态与「已完成」由评审动作推进，看板不提供拖入（完成须先提交评审并经教师通过）
+        droppable: c.key !== "reviewing" && c.key !== "rejected" && c.key !== "done",
       }));
   }
 }

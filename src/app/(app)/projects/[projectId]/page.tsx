@@ -1,4 +1,4 @@
-﻿import Link from "next/link";
+import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { z } from "zod";
 import { and, eq, desc } from "drizzle-orm";
@@ -21,9 +21,9 @@ import { ListView } from "./list-view";
 import { GanttView } from "./gantt-view";
 import { ViewTabs } from "./view-tabs";
 import { EmptyState } from "./empty-state";
-import { ChatPanel } from "./chat-panel";
 import { FilterBar } from "./filter-bar";
 import { MemberLoadView } from "./member-load-view";
+import { ChatPanel } from "./chat-panel";
 import { TaskDetail, type TaskDetailTask } from "./task-detail";
 
 export default async function ProjectPage({
@@ -296,10 +296,11 @@ export default async function ProjectPage({
       {/* 成员负载下沉到任务区之后：首屏优先露出任务本身 */}
       <MemberLoadView projectId={projectId} members={memberLoads} today={today} />
 
+      {/* 项目助手：悬浮窗由组件的固定定位承载，这里只负责挂载与传入历史 */}
       <ChatPanel
         projectId={projectId}
         initialMessages={initialMessages}
-        members={members}
+        members={members.map((m) => ({ id: m.id, name: m.name }))}
         milestones={projectMilestones.map((m) => ({ id: m.id, name: m.title }))}
       />
 
