@@ -26,7 +26,7 @@ const decomposeSchema = z.object({ tasks: z.array(taskDraftSchema).min(1) });
 
 const patchSchema = z.object({
   title: z.string().optional(),
-  status: z.enum(["todo", "doing", "done"]).optional(),
+  status: z.enum(["todo", "doing"]).optional(),
   assigneeIds: z.array(z.string()).optional(),
   dueDate: z.string().optional(),
   milestoneId: z.string().optional(),

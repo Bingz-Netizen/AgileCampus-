@@ -1,4 +1,4 @@
-import { and, eq, inArray, ne, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import type { DbTx } from "@/db";
 import {
@@ -197,18 +197,10 @@ export async function updateTask(
   if (patch.sprintId) await validateSprint(task.projectId, patch.sprintId);
   if (patch.relatedTaskId) await validateRelatedTask(task.projectId, patch.relatedTaskId, taskId);
 
-  // 完成-开始依赖：标记 done 前校验无未完成的前置任务（后置任务被前置阻断，不得完成）。
-  // 仅限「非 done → done」的跃迁，避免已完成任务补保存时被历史前置误拦。
+  // 「已完成」只能由「通过评审」（reviewing → done）达成：禁止经 updateTask 直接标 done，
+  // 否则学生可绕过评审直接完成。依赖校验已由 approveReview 在通过评审时统一执行。
   if (patch.status === "done" && task.status !== "done") {
-    const blockers = await exec
-      .select({ title: tasks.title })
-      .from(taskDependencies)
-      .innerJoin(tasks, eq(taskDependencies.predecessorId, tasks.id))
-      .where(and(eq(taskDependencies.successorId, taskId), ne(tasks.status, "done")));
-    if (blockers.length > 0)
-      throw new AppError(
-        `存在未完成的前置任务（${blockers.map((b) => b.title).join("、")}），暂不能标记完成`,
-      );
+    throw new AppError("「已完成」只能通过提交评审并由教师/管理员通过后达成");
   }
 
   // 显式白名单构造，勿用 ...patch 展开：运行时宽对象可夹带 projectId/sortOrder 等越权字段

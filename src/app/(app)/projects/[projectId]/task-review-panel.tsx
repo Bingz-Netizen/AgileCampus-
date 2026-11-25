@@ -60,6 +60,8 @@ export function TaskReviewPanel({
   const canReject = viewerRole === "admin" || viewerRole === "teacher" || viewerRole === "leader";
   const canApprove = viewerRole === "admin" || viewerRole === "teacher";
   const isAssignee = assigneeIds.includes(viewerId);
+  // 提交评审：负责人（学生）可提交；小组长（leader）亦可代为提交（不论是否负责人）
+  const canSubmit = isAssignee || viewerRole === "leader";
 
   return (
     <div className="space-y-3">
@@ -69,7 +71,7 @@ export function TaskReviewPanel({
         status={status}
         canReject={canReject}
         canApprove={canApprove}
-        isAssignee={isAssignee}
+        canSubmit={canSubmit}
       />
       <AnnotationList projectId={projectId} taskId={taskId} viewerId={viewerId} onPosted={() => router.refresh()} />
     </div>
@@ -82,14 +84,14 @@ function ReviewActions({
   status,
   canReject,
   canApprove,
-  isAssignee,
+  canSubmit,
 }: {
   projectId: string;
   taskId: string;
   status: string;
   canReject: boolean;
   canApprove: boolean;
-  isAssignee: boolean;
+  canSubmit: boolean;
 }) {
   const router = useRouter();
   const [submitState, submitAction, submitting] = useActionState<FormState, FormData>(submitReviewAction, null);
@@ -149,12 +151,13 @@ function ReviewActions({
     (rejectState && "error" in rejectState && rejectState.error) ||
     null;
 
-  // 学生（负责人）：doing 提交评审 / rejected 重提
-  const canSubmit = isAssignee && !canReject;
   // 初审者（教师/管理员/小组长）：reviewing 时显示评审面板
   const showPanel = canReject && status === "reviewing";
 
-  if (!canSubmit && !showPanel && status !== "reviewing") {
+  // 有可操作按钮（提交/重提）或处于待评审态时才渲染评审区；否则仅显示状态提示
+  const hasAction =
+    (canSubmit && (status === "doing" || status === "rejected")) || status === "reviewing";
+  if (!hasAction) {
     return <p className="text-xs text-ink-faint">{STATUS_HINT[status] ?? status}</p>;
   }
 
@@ -179,7 +182,7 @@ function ReviewActions({
           </button>
         </form>
       )}
-      {canSubmit && status === "reviewing" && (
+      {canSubmit && !canReject && status === "reviewing" && (
         <p className="text-xs text-ink-faint">{STATUS_HINT.reviewing}</p>
       )}
       {showPanel && (

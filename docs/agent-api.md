@@ -41,7 +41,7 @@ curl -X POST "$AGILECAMPUS_URL/api/agent/tasks" \
 
 ### 2. 填写完成情况 — `POST /api/agent/tasks/complete`
 
-将任务标记为 `done` 并附完成说明。
+填写完成说明并提交评审（`doing → reviewing`）。完成（`done`）须经教师评审通过，此端点不再直接标记 `done`。
 
 | 字段 | 类型 | 必填 | 说明 |
 |---|---|---|---|

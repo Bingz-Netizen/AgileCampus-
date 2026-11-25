@@ -31,10 +31,8 @@ describe("completionNote", () => {
     const { student, project } = await scene();
     const t = await createTask(student.id, project.id, { title: "甲" });
     const u = await updateTask(student.id, t.id, {
-      status: "done",
       completionNote: "已按计划完成，附实验数据",
     });
-    expect(u.status).toBe("done");
     expect(u.completionNote).toBe("已按计划完成，附实验数据");
   });
 });
@@ -125,15 +123,12 @@ describe("依赖（完成-开始）", () => {
     await expect(addTaskDependency(student.id, c.id, a.id)).rejects.toThrow("循环");
   });
 
-  it("前置未完成阻断后置完成，前置完成后放行", async () => {
+  it("完成须经评审：直接标 done 被拒（依赖校验已并入通过评审）", async () => {
     const { student, project } = await scene();
     const a = await createTask(student.id, project.id, { title: "甲" });
     const b = await createTask(student.id, project.id, { title: "乙" });
     await addTaskDependency(student.id, a.id, b.id);
-    await expect(updateTask(student.id, b.id, { status: "done" })).rejects.toThrow("前置");
-    await updateTask(student.id, a.id, { status: "done" });
-    await expect(updateTask(student.id, b.id, { status: "done" })).resolves.toMatchObject({
-      status: "done",
-    });
+    // 无论前置是否完成，经 updateTask 直接标 done 一律被拒——完成只能由「通过评审」达成
+    await expect(updateTask(student.id, b.id, { status: "done" })).rejects.toThrow("已完成");
   });
 });

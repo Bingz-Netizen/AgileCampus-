@@ -6,6 +6,7 @@ import { getProjectForUser } from "@/lib/project";
 import { listRetros } from "@/lib/retro";
 import { listSprintOptions } from "@/lib/sprint";
 import { RetroForm } from "./retro-form";
+import { RetroCard, type RetroItem } from "./retro-card";
 
 export default async function RetrospectivesPage({
   params,
@@ -24,6 +25,23 @@ export default async function RetrospectivesPage({
     listRetros(session.user.id, projectId),
     listSprintOptions(session.user.id, projectId),
   ]);
+
+  const items: RetroItem[] = retros.map((r) => ({
+    id: r.id,
+    title: r.title,
+    wentWell: r.wentWell,
+    wentBad: r.wentBad,
+    improvements: r.improvements,
+    pitfalls: r.pitfalls,
+    sprintId: r.sprintId,
+    sprintName: r.sprintName,
+    authorName: r.authorName,
+    createdAtLabel: r.createdAt.toLocaleDateString("sv-SE"),
+    canManage:
+      r.createdById === session.user.id ||
+      access.role === "admin" ||
+      access.role === "teacher",
+  }));
 
   return (
     <main className="mx-auto max-w-3xl space-y-6 py-8">
@@ -44,32 +62,14 @@ export default async function RetrospectivesPage({
 
       <section className="space-y-3">
         <h2 className="font-display text-lg font-semibold text-ink">历史复盘</h2>
-        {retros.length === 0 && <p className="text-sm text-ink-faint">还没有复盘记录。</p>}
-        {retros.map((r) => (
-          <article key={r.id} className="ac-card space-y-2 p-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h3 className="font-medium text-ink">{r.title}</h3>
-              <span className="text-xs text-ink-faint">
-                {r.sprintName ? `${r.sprintName} · ` : ""}
-                {r.authorName ?? "已注销用户"} · {r.createdAt.toLocaleDateString("sv-SE")}
-              </span>
-            </div>
-            <dl className="grid gap-2 text-sm sm:grid-cols-2">
-              {[
-                ["做得好的", r.wentWell],
-                ["待改进的", r.wentBad],
-                ["改进措施", r.improvements],
-                ["踩坑点", r.pitfalls],
-              ].map(([label, value]) =>
-                value ? (
-                  <div key={String(label)}>
-                    <dt className="text-xs text-ink-faint">{label}</dt>
-                    <dd className="whitespace-pre-wrap text-ink">{value}</dd>
-                  </div>
-                ) : null,
-              )}
-            </dl>
-          </article>
+        {items.length === 0 && <p className="text-sm text-ink-faint">还没有复盘记录。</p>}
+        {items.map((r) => (
+          <RetroCard
+            key={r.id}
+            projectId={projectId}
+            retro={r}
+            sprints={sprints.map((s) => ({ id: s.id, name: s.name }))}
+          />
         ))}
       </section>
     </main>

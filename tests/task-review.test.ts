@@ -55,6 +55,12 @@ describe("批注评审流转", () => {
     await expect(submitReview(other.id, t2.id)).rejects.toThrow("没有权限");
   });
 
+  it("小组长可代为提交评审（非负责人）", async () => {
+    const { student, leader, project } = await scene();
+    const t = await doingTask(student.id, project.id);
+    await expect(submitReview(leader.id, t.id)).resolves.toBeUndefined();
+  });
+
   it("todo 直接提交评审被拒（状态机约束）", async () => {
     const { student, project } = await scene();
     const t = await createTask(student.id, project.id, {

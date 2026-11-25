@@ -117,13 +117,19 @@ describe("updateTask", () => {
     ).rejects.toThrow("任务不存在");
   });
 
+  it("直接标 done 被拒（完成须经评审）", async () => {
+    const { student, project } = await scene();
+    const t = await createTask(student.id, project.id, { title: "任务" });
+    await expect(updateTask(student.id, t.id, { status: "done" })).rejects.toThrow("已完成");
+  });
+
   it("patch 夹带越权字段（如 projectId）不会被写入", async () => {
     const { owner, team, student, project } = await scene();
     const other = await createProject(owner.id, team.id, { name: "另一项目" });
     const t = await createTask(student.id, project.id, { title: "任务" });
-    const evil = { status: "done", projectId: other.id, sortOrder: -1 } as Parameters<typeof updateTask>[2];
+    const evil = { status: "doing", projectId: other.id, sortOrder: -1 } as Parameters<typeof updateTask>[2];
     const updated = await updateTask(student.id, t.id, evil);
-    expect(updated.status).toBe("done");
+    expect(updated.status).toBe("doing");
     expect(updated.projectId).toBe(project.id);  // 未被挪走
     expect(updated.sortOrder).toBe(t.sortOrder); // 未被篡改
   });

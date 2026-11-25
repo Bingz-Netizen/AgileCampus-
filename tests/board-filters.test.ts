@@ -139,9 +139,10 @@ describe("deriveColumns", () => {
   it("按状态分组：五列（含评审两态），patch 改 status", () => {
     const cols = deriveColumns("status", ctx);
     expect(cols.map((c) => c.key)).toEqual(["todo", "doing", "reviewing", "rejected", "done"]);
-    // 评审两态只能通过评审动作流转，不可拖入
+    // 评审两态与「已完成」只能通过评审动作流转，不可拖入
     expect(cols[2].droppable).toBe(false);
     expect(cols[3].droppable).toBe(false);
+    expect(cols[4].droppable).toBe(false);
     expect(cols[1].patch).toEqual({ status: "doing" });
     expect(cols[1].matches(task({ status: "doing" }))).toBe(true);
     expect(cols[1].matches(task({ status: "todo" }))).toBe(false);

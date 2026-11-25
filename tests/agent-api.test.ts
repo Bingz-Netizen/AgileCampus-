@@ -77,7 +77,7 @@ describe("POST /api/agent/tasks", () => {
 describe("POST /api/agent/tasks/complete", () => {
   beforeEach(resetDb);
 
-  it("填完成情况：status=done + completionNote", async () => {
+  it("填完成情况：status=reviewing + completionNote（完成须经评审）", async () => {
     const { owner, project, token } = await scene();
     const created = await tasksRoute(req({ projectId: project.id, title: "待办" }, token));
     expect(created.status).toBe(200);
@@ -88,7 +88,7 @@ describe("POST /api/agent/tasks/complete", () => {
     );
     expect(res.status).toBe(200);
     const [after] = await listProjectTasks(owner.id, project.id);
-    expect(after.status).toBe("done");
+    expect(after.status).toBe("reviewing");
     expect(after.completionNote).toBe("已跑通演武");
   });
 
