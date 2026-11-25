@@ -13,6 +13,8 @@ export async function loginAction(
     await signIn("credentials", {
       email: formData.get("email"),
       password: formData.get("password"),
+      // 「记住我」勾选框：true=30 天持久登录，false=关浏览器即失效
+      remember: formData.get("remember") === "true" ? "true" : "false",
       redirectTo: "/teams",
     });
     return null;

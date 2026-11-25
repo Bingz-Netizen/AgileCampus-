@@ -5,6 +5,7 @@ import { auth } from "@/lib/auth";
 import { db } from "@/db";
 import { teamMembers, teams } from "@/db/schema";
 import { TeamForms } from "./team-forms";
+import { InviteCode } from "./invite-code";
 
 export default async function TeamsPage() {
   const session = await auth();
@@ -40,9 +41,7 @@ export default async function TeamsPage() {
                     </span>
                     <RoleBadge role={t.role} />
                   </div>
-                  <p className="mt-1 text-xs text-ink-faint">
-                    邀请码 <span className="font-mono text-ink-soft">{t.inviteCode}</span>
-                  </p>
+                  <InviteCode code={t.inviteCode} />
                 </div>
               </div>
               <div className="mt-3 flex flex-wrap gap-2 border-t border-line pt-3">

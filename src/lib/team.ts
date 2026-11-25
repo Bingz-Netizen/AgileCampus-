@@ -69,6 +69,14 @@ export async function listTeamMembers(teamId: string) {
     .where(eq(teamMembers.teamId, teamId));
 }
 
+async function countAdmins(teamId: string) {
+  const rows = await db
+    .select({ userId: teamMembers.userId })
+    .from(teamMembers)
+    .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.role, "admin")));
+  return rows.length;
+}
+
 export async function updateMemberRole(
   actorId: string,
   teamId: string,
@@ -76,11 +84,49 @@ export async function updateMemberRole(
   role: TeamRole,
 ) {
   await requireTeamRole(actorId, teamId, ["admin"]);
+  const [target] = await db
+    .select()
+    .from(teamMembers)
+    .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, targetUserId)));
+  if (!target) throw new AppError("该成员不在团队中");
+
+  // 末位管理员不变量：不能把最后一名 admin 降级，否则团队无人可管理
+  if (target.role === "admin" && role !== "admin" && (await countAdmins(teamId)) <= 1) {
+    throw new AppError("团队至少保留一名管理员，不能降级最后一名管理员");
+  }
+
   const [updated] = await db
     .update(teamMembers)
     .set({ role })
     .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, targetUserId)))
     .returning();
-  if (!updated) throw new AppError("该成员不在团队中");
   return updated;
+}
+
+/** 管理员移除成员；被移除者若是最后一名管理员则拒绝 */
+export async function removeTeamMember(actorId: string, teamId: string, targetUserId: string) {
+  await requireTeamRole(actorId, teamId, ["admin"]);
+  const [target] = await db
+    .select()
+    .from(teamMembers)
+    .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, targetUserId)));
+  if (!target) throw new AppError("该成员不在团队中");
+  if (target.role === "admin" && (await countAdmins(teamId)) <= 1) {
+    throw new AppError("不能移除最后一名管理员");
+  }
+  await db
+    .delete(teamMembers)
+    .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, targetUserId)));
+}
+
+/** 主动退出团队；最后一名管理员须先转让或先提升他人为管理员 */
+export async function leaveTeam(actorId: string, teamId: string) {
+  const member = await getTeamMembership(actorId, teamId);
+  if (!member) throw new AppError("你不在该团队中");
+  if (member.role === "admin" && (await countAdmins(teamId)) <= 1) {
+    throw new AppError("你是团队唯一的管理员，请先把他人设为管理员再退出");
+  }
+  await db
+    .delete(teamMembers)
+    .where(and(eq(teamMembers.teamId, teamId), eq(teamMembers.userId, actorId)));
 }

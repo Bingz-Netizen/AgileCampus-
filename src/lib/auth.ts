@@ -32,7 +32,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const ok = await verifyPassword(parsed.data.password, user.passwordHash);
         if (!ok) return null;
 
-        return { id: user.id, email: user.email, name: user.name };
+        // 「记住我」勾选框：随凭据透传到 JWT，供中间件决定 cookie 过期属性
+        const remember = (credentials as { remember?: string } | undefined)?.remember === "true";
+        return { id: user.id, email: user.email, name: user.name, remember };
       },
     }),
     Credentials({
@@ -52,11 +54,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   ],
   callbacks: {
     jwt({ token, user }) {
-      if (user) token.id = user.id;
+      if (user) {
+        token.id = user.id;
+        token.remember = (user as { remember?: boolean }).remember === true;
+      }
       return token;
     },
     session({ session, token }) {
       if (session.user) session.user.id = token.id as string;
+      session.remember = token.remember as boolean | undefined;
       return session;
     },
   },

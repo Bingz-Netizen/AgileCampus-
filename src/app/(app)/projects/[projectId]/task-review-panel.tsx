@@ -265,6 +265,8 @@ function AnnotationList({
   };
 
   useEffect(() => {
+    // 首屏加载批注：异步 fetch 后再 setState，规则在此为误报
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [taskId]);

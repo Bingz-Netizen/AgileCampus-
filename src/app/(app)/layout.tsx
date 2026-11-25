@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth, signOut } from "@/lib/auth";
 import { countUnreadNotifications } from "@/lib/comment";
@@ -14,7 +14,7 @@ export default async function AppLayout({
   const session = await auth();
   if (!session?.user) redirect("/login");
   const unread = await countUnreadNotifications(session.user.id);
-  // 工作台入口仅教师/管理员可见（学生手输 URL 进入也只会看到本人口径，见 workbench/page.tsx）
+  // 项目进度入口仅教师/管理员/小组长可见（学生手输 URL 进入也只会看到本人口径，见 workbench/page.tsx）
   const isTeacher = await hasTeacherRoleAnywhere(session.user.id);
 
   // 新手引导自动触发：学生层（非 admin/teacher）且进度为 not_started / in_progress 时弹出（completed/skipped 不弹）
@@ -44,7 +44,7 @@ export default async function AppLayout({
                 href="/workbench"
                 className="rounded-field px-2.5 py-1.5 text-sm text-ink-soft transition-colors hover:bg-primary-soft hover:text-primary"
               >
-                工作台
+                项目进度
               </Link>
             )}
             <Link

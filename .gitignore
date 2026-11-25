@@ -1,4 +1,4 @@
-# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+﻿# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
 
 # dependencies
 /node_modules
@@ -56,3 +56,7 @@ next-env.d.ts
 
 # AI 开发上下文文档（非功能代码）
 Project.md
+
+# 本机开发服务器日志
+dev-server.log
+dev-server.err.log
