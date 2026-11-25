@@ -44,13 +44,6 @@ const LEVEL_LABEL: Record<LoadLevel, string> = {
   overload: "过载",
 };
 
-// 前三名排名徽章配色（金/银/铜）。项目色板无奖牌色，故用内联色值，不新增主题色。
-const RANK_MEDAL: Record<number, { bg: string; fg: string }> = {
-  1: { bg: "#f2c94c", fg: "#5a4300" }, // 金牌
-  2: { bg: "#c7ccd4", fg: "#3a3f47" }, // 银牌
-  3: { bg: "#cd7f4a", fg: "#4a2a12" }, // 铜牌
-};
-
 export function MemberLoadView({
   projectId,
   members,
@@ -155,7 +148,6 @@ function MemberCard({
 }) {
   const level = member.loadLevel;
   const hasOverdue = member.overdueCount > 0;
-  const rank = member.loadRank;
 
   return (
     <div
@@ -173,18 +165,7 @@ function MemberCard({
       } ${active ? "ring-2 ring-primary" : ""}`}
     >
       <div className="flex items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-1.5">
-          {rank !== null && rank >= 1 && rank <= 3 && (
-            <span
-              className="ac-badge shrink-0"
-              style={{ backgroundColor: RANK_MEDAL[rank].bg, color: RANK_MEDAL[rank].fg }}
-              title={`团队负载第 ${rank} 名`}
-            >
-              第{rank}名
-            </span>
-          )}
-          <span className="truncate text-sm font-medium text-ink">{member.name}</span>
-        </div>
+        <span className="truncate text-sm font-medium text-ink">{member.name}</span>
         {hasOverdue && (
           <span
             className="h-2 w-2 shrink-0 rounded-full bg-high"

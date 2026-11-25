@@ -23,7 +23,11 @@ export function NewTaskForm({
   const [kind, setKind] = useState<"feature" | "bug">("feature");
 
   return (
-    <form action={formAction} className="ac-card space-y-2 p-4">
+    <form
+      action={formAction}
+      className="ac-card space-y-2 p-4"
+      data-onboarding-anchor="break-tasks"
+    >
       <h2 className="font-medium text-ink">新建任务 / 缺陷</h2>
       <input type="hidden" name="projectId" value={projectId} />
       <input name="title" placeholder="标题（缺陷卡写清复现路径）" className="ac-field" />

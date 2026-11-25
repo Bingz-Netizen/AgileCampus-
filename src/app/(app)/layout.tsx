@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { auth, signOut } from "@/lib/auth";
 import { countUnreadNotifications } from "@/lib/comment";
 import { hasTeacherRoleAnywhere } from "@/lib/workbench";
+import { getOnboardingProgress, hasAnyProject, isOnboardingStudent } from "@/lib/onboarding";
+import { OnboardingLauncher } from "./onboarding/onboarding-launcher";
 
 export default async function AppLayout({
   children,
@@ -14,6 +16,14 @@ export default async function AppLayout({
   const unread = await countUnreadNotifications(session.user.id);
   // 项目进度入口仅教师/管理员/小组长可见（学生手输 URL 进入也只会看到本人口径，见 workbench/page.tsx）
   const isTeacher = await hasTeacherRoleAnywhere(session.user.id);
+
+  // 新手引导自动触发：学生层（非 admin/teacher）且进度为 not_started / in_progress 时弹出（completed/skipped 不弹）
+  const [progress, isStudent, hasProject] = await Promise.all([
+    getOnboardingProgress(session.user.id),
+    isOnboardingStudent(session.user.id),
+    hasAnyProject(session.user.id),
+  ]);
+  const autoTrigger = isStudent && (progress.status === "not_started" || progress.status === "in_progress");
 
   return (
     <div className="min-h-screen">
@@ -62,7 +72,7 @@ export default async function AppLayout({
               )}
             </Link>
             <Link
-              href="/settings/tokens"
+              href="/settings"
               className="rounded-field px-2.5 py-1.5 text-sm text-ink-soft transition-colors hover:bg-primary-soft hover:text-primary"
             >
               设置
@@ -81,6 +91,7 @@ export default async function AppLayout({
         </form>
       </header>
       <div className="mx-auto max-w-5xl p-6">{children}</div>
+      <OnboardingLauncher autoTrigger={autoTrigger} progress={progress} hasProject={hasProject} />
     </div>
   );
 }

@@ -533,3 +533,38 @@ export const taskAnnotations = pgTable(
     index("task_annotations_parent_idx").on(t.parentId),
   ],
 );
+
+// ---- 新手引导 Onboarding：用户全局进度（按用户记录，不按项目） ----
+
+// 引导内「组长 / 普通成员」是用户在欢迎页自选的身份（非团队角色），只用于差异化文案。
+// 团队角色仍只有 team_role（admin/teacher/leader/student），此处不新增用户角色。
+export const onboardingRoleTypeEnum = pgEnum("onboarding_role_type", ["leader", "member"]);
+export type OnboardingRoleType = (typeof onboardingRoleTypeEnum.enumValues)[number];
+
+export const onboardingStatusEnum = pgEnum("onboarding_status", [
+  "not_started",
+  "in_progress",
+  "completed",
+  "skipped",
+]);
+export type OnboardingStatus = (typeof onboardingStatusEnum.enumValues)[number];
+
+// 引导进度：每用户最多一行（unique(user_id)）。currentStep 为整数：0=身份选择（欢迎页）、1=建项目、2=拆任务、3=用看板。
+// 自动触发只以用户全局状态为准，不存 projectId；中途离开下次登录从 currentStep 续。
+export const onboardingProgress = pgTable(
+  "onboarding_progress",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    userId: uuid("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    roleType: onboardingRoleTypeEnum("role_type"),
+    currentStep: integer("current_step").notNull().default(0),
+    status: onboardingStatusEnum("status").notNull().default("not_started"),
+    startedAt: timestamp("started_at"),
+    completedAt: timestamp("completed_at"),
+    skippedAt: timestamp("skipped_at"),
+    updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex("onboarding_progress_user_unique").on(t.userId)],
+);

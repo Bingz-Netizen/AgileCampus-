@@ -151,7 +151,7 @@ export function Board({
     <DndContext id={`board-${projectId}`} sensors={sensors} onDragEnd={handleDragEnd}>
       {error && <p className="text-sm text-high">{error}</p>}
       {/* 列数随分组维度而变，故横向滚动而非固定三栏 */}
-      <div className="flex gap-4 overflow-x-auto pb-2">
+      <div className="flex gap-4 overflow-x-auto pb-2" data-onboarding-anchor="use-board">
         {columns.map((col) => (
           <Column
             key={col.key}
