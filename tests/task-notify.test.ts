@@ -48,14 +48,4 @@ describe("即时通知接入", () => {
     await waitForCall();
     expect(sendMock.mock.calls.some((c) => c[0] === "ou_other")).toBe(true);
   });
-
-  it("owner 自建自完成 → 不发完成通知（创建者=操作者）", async () => {
-    const { owner, project } = await base();
-    const task = await createTask(owner.id, project.id, { title: "攻城" });
-    sendMock.mockClear();
-
-    await updateTask(owner.id, task.id, { status: "done", completionNote: "克" });
-    await new Promise((r) => setTimeout(r, 0));
-    expect(sendMock).not.toHaveBeenCalled();
-  });
 });

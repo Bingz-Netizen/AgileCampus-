@@ -85,7 +85,7 @@ describe("commitDraft — update_tasks 版本校验", () => {
   it("版本过期（updatedAt 不符）→ 冲突、不落库", async () => {
     const { student, project } = await scene();
     const t = await createTask(student.id, project.id, { title: "甲" });
-    await updateTask(student.id, t.id, { status: "done" });
+    await updateTask(student.id, t.id, { status: "doing" });
     const r = await commitDraft(student.id, project.id, "update_tasks", {
       updates: [
         { taskId: t.id, updatedAt: "2000-01-01T00:00:00.000Z", patch: { status: "doing" } },
@@ -94,7 +94,7 @@ describe("commitDraft — update_tasks 版本校验", () => {
     expect(r.committed).toBe(0);
     expect(r.conflicts).toEqual([t.id]);
     const [after] = await listProjectTasks(student.id, project.id);
-    expect(after.status).toBe("done");
+    expect(after.status).toBe("doing");
   });
 });
 

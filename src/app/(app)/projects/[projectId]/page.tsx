@@ -1,10 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { z } from "zod";
-import { eq, desc } from "drizzle-orm";
 import { auth } from "@/lib/auth";
-import { db } from "@/db";
-import { conversations, messages as messagesTable } from "@/db/schema";
 import { getProjectForUser, listProjectMilestones } from "@/lib/project";
 import { listTeamMembers } from "@/lib/team";
 import { listProjectTasks, listProjectDependencies } from "@/lib/task";
@@ -21,7 +18,6 @@ import { ListView } from "./list-view";
 import { GanttView } from "./gantt-view";
 import { ViewTabs } from "./view-tabs";
 import { EmptyState } from "./empty-state";
-import { ChatPanel } from "./chat-panel";
 import { FilterBar } from "./filter-bar";
 import { MemberLoadView } from "./member-load-view";
 import { TaskDetail, type TaskDetailTask } from "./task-detail";
@@ -186,25 +182,6 @@ export default async function ProjectPage({
     );
   }
 
-  const [latestConv] = await db
-    .select({ id: conversations.id })
-    .from(conversations)
-    .where(eq(conversations.projectId, projectId))
-    .orderBy(desc(conversations.createdAt))
-    .limit(1);
-
-  const history = latestConv
-    ? await db
-        .select({ role: messagesTable.role, content: messagesTable.content })
-        .from(messagesTable)
-        .where(eq(messagesTable.conversationId, latestConv.id))
-        .orderBy(messagesTable.createdAt)
-    : [];
-
-  const initialMessages = history
-    .filter((m) => m.role === "user" || m.role === "assistant")
-    .map((m) => ({ role: m.role as "user" | "assistant", content: m.content }));
-
   return (
     <main className="mx-auto max-w-5xl space-y-8 py-8">
       <header>
@@ -290,13 +267,6 @@ export default async function ProjectPage({
 
       {/* 成员负载下沉到任务区之后：首屏优先露出任务本身 */}
       <MemberLoadView projectId={projectId} members={memberLoads} today={today} />
-
-      <ChatPanel
-        projectId={projectId}
-        initialMessages={initialMessages}
-        members={members}
-        milestones={projectMilestones.map((m) => ({ id: m.id, name: m.title }))}
-      />
 
       {canWrite && (
         <NewTaskForm
